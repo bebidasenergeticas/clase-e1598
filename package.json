@@ -1,0 +1,35 @@
+{
+  "name": "e1598-automation-systems",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AUTOMATION SYSTEMS · E1598 Semana 9 — experiencia educativa para la clase final de Automatización Básica (Top Learning).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.1",
+    "framer-motion": "^12.43.0",
+    "gsap": "^3.15.0",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.176.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.176.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "~5.8",
+    "vite": "^6.4.3"
+  }
+}
