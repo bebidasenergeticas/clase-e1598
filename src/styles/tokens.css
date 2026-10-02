@@ -1,0 +1,47 @@
+:root {
+  /* Superficies */
+  --bg: #05070d;
+  --bg-1: #080c16;
+  --bg-2: #0c1222;
+  --navy: #141c3a;
+  --panel: rgba(14, 20, 38, 0.62);
+  --panel-solid: #0d1324;
+  --line: rgba(190, 210, 255, 0.09);
+  --line-2: rgba(190, 210, 255, 0.16);
+
+  /* Texto */
+  --text: #eef1f7;
+  --text-2: #c3cad9;
+  --muted: #8a93a8;
+  --faint: #5d6680;
+
+  /* Acentos */
+  --cyan: #6fd3ff;
+  --blue: #4d8dff;
+  --gold: #f5a524; /* inspirado en Top Learning */
+  --gold-soft: #ffc25e;
+  --red: #ff5d5d;
+  --green: #45e0a0;
+  --violet: #a996ff;
+
+  /* Tipografía */
+  --font-display: 'Space Grotesk', 'Inter Variable', system-ui, sans-serif;
+  --font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Escala */
+  --gutter: clamp(20px, 3.2vw, 56px);
+  --radius: 14px;
+  --radius-sm: 9px;
+
+  --fs-hero: clamp(2.6rem, 6.4vw, 6.4rem);
+  --fs-h1: clamp(2.1rem, 4.6vw, 4.6rem);
+  --fs-h2: clamp(1.6rem, 3vw, 3rem);
+  --fs-h3: clamp(1.15rem, 1.6vw, 1.6rem);
+  --fs-body: clamp(0.95rem, 1.05vw, 1.12rem);
+  --fs-small: clamp(0.78rem, 0.82vw, 0.9rem);
+  --fs-mono: clamp(0.66rem, 0.72vw, 0.78rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+}
