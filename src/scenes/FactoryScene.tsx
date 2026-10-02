@@ -1,7 +1,17 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { Beam, C, Label, Node3D, Packet, Particles, Stage3D, TechFloor, approach, isMotion, makeAnim, makeBeam, range, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { limites } from '../data/courseContent'
+import { Beam, C, FloatTag, Label, Node3D, Packet, Particles, PulseRing, Stage3D, TechFloor, approach, isMotion, makeAnim, makeBeam, makePulse, makeTag, range, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+
+/** Evento para sincronizar el DOM (chips y contador) con lo que pasa en 3D. */
+export interface FactoryEvent {
+  kind: 'ok' | 'lost' | 'routed'
+  /** índice en limites.problems */
+  problem?: number
+}
+/** Problemas que van a HUMANO (el resto va a EXCEPCIÓN). */
+const TO_HUMAN = new Set(['human', 'branch'])
 
 /**
  * Fábrica 3D: INPUT → PROCESS → OUTPUT.
@@ -29,7 +39,7 @@ const colRed = new THREE.Color(C.red)
 const colGold = new THREE.Color(C.gold)
 const colGreen = new THREE.Color(C.green)
 
-function Factory({ progress, beats }: { progress: { current: number }; beats: number }) {
+function Factory({ progress, beats, onEvent }: { progress: { current: number }; beats: number; onEvent?: (e: FactoryEvent) => void }) {
   const clock = useSceneClock()
   const root = useRef<THREE.Group>(null)
   const ring = useRef<THREE.Mesh>(null)
@@ -60,7 +70,23 @@ function Factory({ progress, beats }: { progress: { current: number }; beats: nu
     [],
   )
   const packets = useMemo(() => Array.from({ length: N_PACKETS }, () => ({ current: null as THREE.Group | null })), [])
-  const pstate = useRef(Array.from({ length: N_PACKETS }, (_, i) => ({ u: i / N_PACKETS, problem: i % 3 === 1, alt: i % 2 })))
+  const pstate = useRef(Array.from({ length: N_PACKETS }, (_, i) => ({ u: i / N_PACKETS, problem: i % 3 === 1, type: Math.floor(i / 3) % limites.problems.length, fired: false })))
+  const nextType = useRef(4)
+  // Rótulos de lectura
+  const tags = useMemo(
+    () => ({
+      problem: limites.problems.map(() => makeTag(C.red, 0, true)),
+      lost: makeTag(C.red),
+      ok: makeTag(C.green),
+      toHum: makeTag(C.gold),
+      toExc: makeTag(C.red),
+      log: makeTag(C.violet),
+    }),
+    [],
+  )
+  const tagUntil = useRef(0)
+  const pulses = useMemo(() => ({ hum: makePulse(), exc: makePulse(), val: makePulse(), log: makePulse() }), [])
+  const prev = useRef({ branching: false, exceptions: false })
 
   useCameraRig(() => {
     const s = stageOf()
@@ -86,6 +112,27 @@ function Factory({ progress, beats }: { progress: { current: number }; beats: nu
     const branching = s > 1.6
     const exceptions = s > 2.6
     const resilient = s > 3.5
+
+    // Pulsos cuando aparece algo nuevo
+    if (branching && !prev.current.branching) {
+      pulses.hum.n++
+      pulses.exc.n++
+    }
+    if (exceptions && !prev.current.exceptions) {
+      pulses.val.n++
+      pulses.log.n++
+    }
+    prev.current = { branching, exceptions }
+
+    // Rótulos fijos según la etapa
+    tags.lost.on = problems && !branching ? 1 : 0
+    tags.ok.on = !problems || resilient ? 1 : 0
+    tags.toHum.on = branching ? 1 : 0
+    tags.toExc.on = branching ? 1 : 0
+    tags.toExc.color.copy(resilient ? colGold : colRed)
+    tags.log.on = exceptions ? 1 : 0
+    // El rótulo del problema se apaga solo después de un momento
+    if (t > tagUntil.current) tags.problem.forEach((tg) => (tg.on = 0))
 
     // Nodos
     n.proc.color.copy(problems && !branching ? colRed : resilient ? colGreen : colCyan)
@@ -118,13 +165,30 @@ function Factory({ progress, beats }: { progress: { current: number }; beats: nu
     }
 
     // Paquetes
-    const speed = problems && !branching ? 0.28 : 0.2
+    const speed = problems && !branching ? 0.2 : 0.14
     pstate.current.forEach((p, i) => {
       const g = packets[i].current
       if (!g) return
       if (motion) p.u += dt * speed
-      if (p.u >= 1) p.u -= 1
+      if (p.u >= 1) {
+        p.u -= 1
+        // al completar el recorrido: los que llegaron a OUTPUT cuentan como "ok"
+        if (!p.problem || !problems) onEvent?.({ kind: 'ok' })
+        p.fired = false
+        if (p.problem) p.type = nextType.current++ % limites.problems.length
+      }
       const u = p.u
+      // El paquete con problema llega a PROCESS: se nombra el problema
+      if (p.problem && problems && u >= 0.5 && !p.fired) {
+        p.fired = true
+        const routed = branching
+        tags.problem.forEach((tg, j) => {
+          tg.on = j === p.type ? 1 : 0
+          tg.color.copy(routed ? colGold : colRed)
+        })
+        tagUntil.current = t + 1.8
+        onEvent?.({ kind: routed ? 'routed' : 'lost', problem: p.type })
+      }
       let color = colCyan
       let scale = 1
       if (u < 0.5) {
@@ -139,10 +203,11 @@ function Factory({ progress, beats }: { progress: { current: number }; beats: nu
           color = colRed
           scale = 1 - range(k, 0.55, 0.75)
         } else {
-          const curve = p.alt ? curveHum : curveExc
+          const toHuman = TO_HUMAN.has(limites.problems[p.type].id)
+          const curve = toHuman ? curveHum : curveExc
           curve.getPoint(k, tmp)
           g.position.copy(tmp)
-          color = resilient ? colGold : p.alt ? colGold : colRed
+          color = resilient || toHuman ? colGold : colRed
           scale = 1 - range(k, 0.92, 1)
         }
       }
@@ -186,17 +251,31 @@ function Factory({ progress, beats }: { progress: { current: number }; beats: nu
       {packets.map((r, i) => (
         <Packet key={i} packetRef={r} size={0.1} />
       ))}
+
+      {/* Capas de lectura */}
+      {limites.problems.map((pr, j) => (
+        <FloatTag key={pr.id} ctl={tags.problem[j]} text={pr.label.toUpperCase()} icon="dot" position={[0.25, 2.0, 0.4]} size={0.17} />
+      ))}
+      <FloatTag ctl={tags.lost} text="se pierden" icon="x" position={[1.9, -2.7, 0.6]} />
+      <FloatTag ctl={tags.ok} text="llegan bien" icon="check" position={[P_OUT.x, 1.05, 0.4]} />
+      <FloatTag ctl={tags.toHum} text="necesita a una persona" icon="arrow" position={[2.15, 1.45, 0.3]} />
+      <FloatTag ctl={tags.toExc} text="dato inválido o error" icon="arrow" position={[1.55, -1.75, 0.3]} />
+      <FloatTag ctl={tags.log} text="registra todo" icon="dot" position={[1.75, -3.1, 0.3]} />
+      <PulseRing ctl={pulses.hum} color={C.gold} position={P_HUM.toArray()} />
+      <PulseRing ctl={pulses.exc} color={C.red} position={P_EXC.toArray()} />
+      <PulseRing ctl={pulses.val} color={C.cyan} position={P_VAL.toArray()} radius={0.45} />
+      <PulseRing ctl={pulses.log} color={C.violet} position={P_LOG.toArray()} radius={0.45} />
       <TechFloor y={-4} opacity={0.6} />
       <Particles count={90} opacity={0.3} />
     </group>
   )
 }
 
-export default function FactoryScene({ visible, progress, beats }: { visible: boolean; progress: { current: number }; beats: number }) {
+export default function FactoryScene({ visible, progress, beats, onEvent }: { visible: boolean; progress: { current: number }; beats: number; onEvent?: (e: FactoryEvent) => void }) {
   return (
     <Stage3D visible={visible} camera={{ position: [1.2, 1.4, 11.5], fov: 40 }}>
       <fog attach="fog" args={[C.bg, 14, 28]} />
-      <Factory progress={progress} beats={beats} />
+      <Factory progress={progress} beats={beats} onEvent={onEvent} />
     </Stage3D>
   )
 }

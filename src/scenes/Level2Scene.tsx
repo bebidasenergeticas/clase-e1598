@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { nivel2 } from '../data/courseContent'
-import { Beam, C, Node3D, Packet, Particles, Stage3D, TechFloor, approach, isMotion, makeAnim, makeBeam, range, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { Beam, C, FloatTag, Node3D, Packet, Particles, PulseRing, Stage3D, TechFloor, approach, isMotion, makeAnim, makeBeam, makePulse, makeTag, range, stepTimer, useCameraRig, useSceneClock, useStageFit } from './common/kit'
 
 /**
  * Nivel 1 → Nivel 2.
@@ -14,6 +14,23 @@ const LINE: Record<string, V3> = { A: [-4, 0, 0], B: [0, 0, 0], C: [4, 0, 0], D:
 const TREE: Record<string, V3> = { A: [-5, 0, 0], IF: [-2.8, 0, 0], B: [0, 2.3, 0], C: [0, 0, 0], H: [0, -2.3, 0], D: [3.6, 1, 0], E: [3.6, -1, 0] }
 
 const SAT_RADIUS: [number, number] = [7.2, 3.9]
+
+/**
+ * Cada pieza del ecosistema se coloca cerca del nodo que explica y se conecta con él
+ * (en vez de todas al centro): así se lee "para qué sirve".
+ */
+const SAT_LAYOUT: { label: string; node: string }[] = [
+  { label: 'BASE DE DATOS', node: 'D' },
+  { label: 'BUCLES', node: 'C' },
+  { label: 'ARRAYS', node: 'C' },
+  { label: 'WEBHOOKS', node: 'A' },
+  { label: 'CONDICIONES', node: 'IF' },
+  { label: 'EXCEPCIONES', node: 'IF' },
+  { label: 'HUMAN APPROVAL', node: 'H' },
+  { label: 'SCRIPTS', node: 'E' },
+]
+const colCyan = new THREE.Color(C.cyan)
+const colGold = new THREE.Color(C.gold)
 
 function Level2({ progress, beats }: { progress: { current: number }; beats: number }) {
   const clock = useSceneClock()
@@ -52,16 +69,48 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
     [],
   )
 
-  const sats = useMemo(
-    () =>
-      nivel2.satellites.map((label, i) => {
-        const a = (i / nivel2.satellites.length) * Math.PI * 2 + Math.PI / 8
-        const p: V3 = [Math.cos(a) * SAT_RADIUS[0], Math.sin(a) * SAT_RADIUS[1], -1.2 + Math.sin(a * 2) * 0.6]
-        return { label, anim: makeAnim(label === 'HUMAN APPROVAL' ? C.gold : label === 'EXCEPCIONES' ? C.red : C.violet, 0, p), beam: makeBeam(C.violet, 0, 0.18), v: new THREE.Vector3(...p) }
-      }),
+  const center = useMemo(() => new THREE.Vector3(0, 0, 0), [])
+  const sats = useMemo(() => {
+    // orden del anillo según SAT_LAYOUT; etiquetas nuevas (si se editan en courseContent) van al final y al centro
+    const ordered = [...nivel2.satellites].sort((a, b) => {
+      const ia = SAT_LAYOUT.findIndex((x) => x.label === a)
+      const ib = SAT_LAYOUT.findIndex((x) => x.label === b)
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
+    })
+    return ordered.map((label, i) => {
+      const a = (i / ordered.length) * Math.PI * 2 + Math.PI / 8
+      const p: V3 = [Math.cos(a) * SAT_RADIUS[0], Math.sin(a) * SAT_RADIUS[1], -1.2 + Math.sin(a * 2) * 0.6]
+      const node = SAT_LAYOUT.find((x) => x.label === label)?.node
+      return {
+        label,
+        node,
+        anim: makeAnim(label === 'HUMAN APPROVAL' ? C.gold : label === 'EXCEPCIONES' ? C.red : C.violet, 0, p),
+        beam: makeBeam(C.violet, 0, 0.32),
+        v: new THREE.Vector3(...p),
+        pulse: makePulse(),
+        shown: false,
+      }
+    })
+  }, [])
+
+  // Rótulos de lectura
+  const tags = useMemo(
+    () => ({
+      line: makeTag(C.cyan),
+      ask: makeTag(C.gold),
+      yes: makeTag(C.cyan),
+      no: makeTag(C.cyan),
+      doubt: makeTag(C.gold),
+      case1: makeTag(C.cyan),
+      case2: makeTag(C.cyan),
+    }),
     [],
   )
-  const center = useMemo(() => new THREE.Vector3(0, 0, 0), [])
+  const mids = useMemo(() => ({ line: new THREE.Vector3(), ask: new THREE.Vector3(), yes: new THREE.Vector3(), no: new THREE.Vector3(), doubt: new THREE.Vector3(), case1: new THREE.Vector3(), case2: new THREE.Vector3() }), [])
+  const timers = useRef({ cond: { current: 0 }, tree: { current: 0 }, eco: { current: 0 } })
+  const ifPulse = useMemo(() => makePulse(), [])
+  const treePulse = useMemo(() => makePulse(), [])
+  const prev = useRef({ cond: false, tree: false })
 
   const packetRefs = useMemo(() => Array.from({ length: 6 }, () => ({ current: null as THREE.Group | null })), [])
   const pst = useRef(Array.from({ length: 6 }, (_, i) => ({ u: i / 6, route: i % 3 })))
@@ -91,6 +140,15 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
     const cond = s > 0.6
     const tree = s > 1.5
     const eco = s > 2.5
+    const msg = s > 3.5
+    // Escalonado: primero se mueven los nodos, luego crecen las conexiones, luego los rótulos
+    const condT = stepTimer(timers.current.cond, cond, dt)
+    const treeT = stepTimer(timers.current.tree, tree, dt)
+    const ecoT = stepTimer(timers.current.eco, eco, dt)
+    if (cond && !prev.current.cond) ifPulse.n++
+    if (tree && !prev.current.tree) treePulse.n++
+    prev.current = { cond, tree }
+    const edgesOn = treeT > 0.7
 
     const target = tree ? TREE : LINE
     for (const k of Object.keys(nodes)) {
@@ -106,17 +164,21 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
 
     beams.AB.grow = cond ? 0 : 1
     beams.BC.grow = tree ? 0 : 1
-    beams.AIF.grow = cond ? 1 : 0
-    beams.IFB.grow = cond ? 1 : 0
-    beams.IFC.grow = tree ? 1 : 0
-    beams.IFH.grow = tree ? 1 : 0
-    beams.CD.grow = tree ? 1 : 0
-    beams.CE.grow = tree ? 1 : 0
+    beams.AIF.grow = cond && condT > 0.4 ? 1 : 0
+    beams.IFB.grow = cond && condT > 0.4 ? 1 : 0
+    beams.IFC.grow = edgesOn ? 1 : 0
+    beams.IFH.grow = edgesOn ? 1 : 0
+    beams.CD.grow = edgesOn ? 1 : 0
+    beams.CE.grow = edgesOn ? 1 : 0
 
+    // Satélites: uno por uno, cada uno con su pulso
     sats.forEach((sat, i) => {
-      sat.anim.show = eco ? 1 : 0
+      const on = eco && ecoT > 0.5 + i * 0.32
+      if (on && !sat.shown) sat.pulse.n++
+      sat.shown = on
+      sat.anim.show = on ? 1 : 0
       sat.anim.glow = 0.35 + 0.25 * Math.sin(t * 1.5 + i)
-      sat.beam.grow = eco ? 1 : 0
+      sat.beam.grow = on ? 1 : 0
     })
 
     // copiar posiciones vivas desde los grupos de nodos
@@ -124,6 +186,24 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
       const g = groups.current[k]
       if (g) live[k].copy(g.position)
     }
+
+    // Rótulos sobre las conexiones (siguen a los nodos)
+    const up = (v: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, dy: number) => v.lerpVectors(a, b, 0.5).setY(v.y + dy).setZ(0.5)
+    up(mids.line, live.A, live.C, 0.55)
+    mids.ask.copy(live.IF).setY(live.IF.y + 0.85).setZ(0.4)
+    up(mids.yes, live.IF, live.B, 0.35)
+    up(mids.no, live.IF, live.C, 0.32)
+    up(mids.doubt, live.IF, live.H, -0.35)
+    up(mids.case1, live.C, live.D, 0.32)
+    up(mids.case2, live.C, live.E, -0.32)
+    const labelsOn = !msg && !eco
+    tags.line.on = !cond ? 1 : 0
+    tags.ask.on = cond && !tree && condT > 0.6 ? 1 : 0
+    tags.yes.on = labelsOn && (tree ? treeT > 1.3 : cond && condT > 1) ? 1 : 0
+    tags.no.on = labelsOn && tree && treeT > 1.5 ? 1 : 0
+    tags.doubt.on = labelsOn && tree && treeT > 1.7 ? 1 : 0
+    tags.case1.on = labelsOn && tree && treeT > 1.9 ? 1 : 0
+    tags.case2.on = labelsOn && tree && treeT > 2.1 ? 1 : 0
 
     if (loop.current) {
       const k = approach(loop.current.scale.x, eco ? 1 : 0, 4, dt)
@@ -137,7 +217,7 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
     pst.current.forEach((p, i) => {
       const g = packetRefs[i].current
       if (!g) return
-      if (motion) p.u = (p.u + dt * 0.22) % 1
+      if (motion) p.u = (p.u + dt * 0.16) % 1
       const u = p.u
       let a: THREE.Vector3, b: THREE.Vector3, k: number
       if (!cond) {
@@ -155,6 +235,10 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
       }
       g.position.lerpVectors(a, b, k)
       g.visible = !(tree && u > 0.66 && p.route !== 1)
+      // los datos que van a la persona se pintan de dorado al pasar el IF
+      const gold = tree && p.route === 2 && u >= 0.33
+      ;((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.copy(gold ? colGold : colCyan)
+      ;((g.children[1] as THREE.Sprite).material as THREE.SpriteMaterial).color.copy(gold ? colGold : colCyan)
     })
   })
 
@@ -188,10 +272,22 @@ function Level2({ progress, beats }: { progress: { current: number }; beats: num
 
       {sats.map((sat) => (
         <group key={sat.label}>
-          <Beam from={center} to={sat.v} anim={sat.beam} thickness={0.01} />
+          <Beam from={sat.node ? live[sat.node] : center} to={sat.v} anim={sat.beam} thickness={0.012} />
           <Node3D anim={sat.anim} label={sat.label} size={[0.5, 0.5, 0.5]} />
+          <PulseRing ctl={sat.pulse} color={C.violet} position={sat.v.toArray()} radius={0.45} />
         </group>
       ))}
+
+      {/* Capas de lectura */}
+      <FloatTag ctl={tags.line} at={mids.line} text="un solo camino" icon="arrow" />
+      <FloatTag ctl={tags.ask} at={mids.ask} text="¿se cumple?" icon="dot" />
+      <FloatTag ctl={tags.yes} at={mids.yes} text="SÍ" icon="check" />
+      <FloatTag ctl={tags.no} at={mids.no} text="NO" icon="x" />
+      <FloatTag ctl={tags.doubt} at={mids.doubt} text="duda: decide una persona" icon="arrow" />
+      <FloatTag ctl={tags.case1} at={mids.case1} text="caso 1" icon="dot" />
+      <FloatTag ctl={tags.case2} at={mids.case2} text="caso 2" icon="dot" />
+      <PulseRing ctl={ifPulse} color={C.gold} at={live.IF} radius={0.5} />
+      <PulseRing ctl={treePulse} color={C.gold} at={live.H} radius={0.6} />
 
       {packetRefs.map((r, i) => (
         <Packet key={i} packetRef={r} size={0.09} />

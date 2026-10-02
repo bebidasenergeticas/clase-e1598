@@ -3,7 +3,8 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { ToolId } from '../data/courseContent'
 import { tools } from '../data/courseContent'
-import { C, Label, Particles, Stage3D, TechFloor, approach, getGlowTexture, isMotion, unitBox, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { C, Label, Particles, Stage3D, TechFloor, approach, getGlowTexture, isMotion, unitBox, useCameraRig, useSceneClock, useStageFit, FloatTag, makeTag, stepTimer } from './common/kit'
+import { see } from '../data/courseContent'
 
 export type ToolsFocus = 'overview' | ToolId | 'table' | 'statement'
 
@@ -147,6 +148,9 @@ function Tool({ id, focus, onSelect, t }: { id: ToolId; focus: ToolsFocus; onSel
   const info = tools.find((x) => x.id === id)!
   const tex = getGlowTexture()
   const halo = useRef<THREE.SpriteMaterial>(null)
+  // Rótulos que explican la metáfora visual del módulo enfocado
+  const tags = useMemo(() => ({ m1: makeTag(ACCENT[id]), m2: makeTag(ACCENT[id]), hint: makeTag(C.white) }), [id])
+  const focusT = useRef(0)
 
   useFrame((_, d) => {
     const dt = Math.min(d, 0.05)
@@ -160,6 +164,10 @@ function Tool({ id, focus, onSelect, t }: { id: ToolId; focus: ToolsFocus; onSel
       if (isMotion()) g.current.rotation.y = approach(g.current.rotation.y, isFocus ? 0.35 : Math.sin(t.current * 0.3 + X[id]) * 0.2, 2, dt)
     }
     if (halo.current) halo.current.opacity = 0.12 + active.current * 0.4
+    const fT = stepTimer(focusT, focus === id, dt)
+    tags.m1.on = fT > 0.9 ? 1 : 0
+    tags.m2.on = fT > 1.5 ? 1 : 0
+    tags.hint.on = hover && focus !== id ? 1 : 0
   })
 
   return (
@@ -188,6 +196,9 @@ function Tool({ id, focus, onSelect, t }: { id: ToolId; focus: ToolsFocus; onSel
         {id === 'n8n' && <N8nModule t={t} />}
       </group>
       <Pedestal color={ACCENT[id]} active={active} />
+      <FloatTag ctl={tags.m1} text={info.metaphor[0]} icon="dot" position={[0, 1.85, 0.6]} size={0.14} />
+      <FloatTag ctl={tags.m2} text={info.metaphor[1]} icon="dot" position={[0, 1.45, 0.6]} size={0.14} />
+      <FloatTag ctl={tags.hint} text={see.tools.hover} icon="arrow" position={[0, 1.45, 0.6]} size={0.14} />
       <Label position={[0, -2.0, 0.6]} size={0.42} display>
         {info.name}
       </Label>
@@ -206,13 +217,13 @@ function Tools({ focus, onSelect }: { focus: ToolsFocus; onSelect: (id: ToolId) 
   const t = useSceneClock()
   const root = useRef<THREE.Group>(null)
   // Columna oficial a la izquierda y pasos arriba; en la conclusión, centrado
-  useStageFit(root, () => ({ w: 13.6, h: 5.4, left: focus === 'statement' ? 0 : 0.36, top: 0.2, bottom: 0.08 }))
+  useStageFit(root, () => ({ w: 13.6, h: 5.8, left: focus === 'statement' ? 0 : 0.36, top: 0.3, bottom: 0.06, ref: 12.5 }))
 
   useCameraRig(() => {
     if (focus === 'zapier' || focus === 'make' || focus === 'n8n') {
       const k = root.current?.scale.x ?? 1
       const x = X[focus] * k
-      return { pos: new THREE.Vector3(x + 1.4 * k, 0.9 * k, 7.6 * k), look: new THREE.Vector3(x, 0, 0) }
+      return { pos: new THREE.Vector3(x + 1.1 * k, 0.8 * k, 10.8 * k), look: new THREE.Vector3(x, 0.1 * k, 0) }
     }
     if (focus === 'table') return { pos: new THREE.Vector3(0, 4.2, 12.5), look: new THREE.Vector3(0, -0.8, 0) }
     if (focus === 'statement') return { pos: new THREE.Vector3(0, 1.5, 17), look: new THREE.Vector3(0, -0.6, 0) }

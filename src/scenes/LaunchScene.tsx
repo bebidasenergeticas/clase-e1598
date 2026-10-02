@@ -1,7 +1,8 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { C, Label, Particles, Stage3D, TechFloor, approach, getGlowTexture, isMotion, unitBox, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { C, Label, Particles, Stage3D, TechFloor, approach, getGlowTexture, isMotion, unitBox, useCameraRig, useSceneClock, useStageFit, FloatTag, PulseRing, makePulse, makeTag } from './common/kit'
+import { launchpad } from '../data/courseContent'
 
 /**
  * Máquina de lanzamiento: 11 segmentos (uno por check) alrededor de un núcleo.
@@ -17,7 +18,17 @@ const cOn = new THREE.Color(C.cyan)
 const cGold = new THREE.Color(C.gold)
 const tmp = new THREE.Color()
 
-function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
+function Machine({ checks, active, focusIndex, last }: { checks: boolean[]; active: boolean; focusIndex: number | null; last: { index: number; key: number } }) {
+  // Rótulo "CHECK n · CÓDIGO" del último check marcado + pulso en su módulo
+  const lastTag = useMemo(() => makeTag(C.cyan), [])
+  const lastPulse = useMemo(() => makePulse(), [])
+  const lastAt = useMemo(() => new THREE.Vector3(), [])
+  const tagAge = useRef(99)
+  useEffect(() => {
+    if (last.key === 0 || last.index < 0) return
+    tagAge.current = 0
+    lastPulse.n++
+  }, [last.key, last.index, lastPulse])
   const t = useSceneClock()
   const root = useRef<THREE.Group>(null)
   const core = useRef<THREE.Group>(null)
@@ -37,7 +48,7 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
 
   useCameraRig(() => ({ pos: new THREE.Vector3(0, active ? 1.4 : 0.9, active ? 11.5 : 12), look: new THREE.Vector3(0, 0, 0) }), 1.6)
   // Estado arriba; ciclo de producción y botones abajo
-  useStageFit(root, () => ({ w: 10.2, h: 10.2, top: 0.15, bottom: 0.25, max: 1.3 }))
+  useStageFit(root, () => ({ w: 11, h: 10.2, top: 0.24, bottom: 0.25, max: 1.3 }))
 
   useFrame((_, d) => {
     const dt = Math.min(d, 0.05)
@@ -47,13 +58,22 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
       if (motion) root.current.rotation.y = approach(root.current.rotation.y, active ? Math.sin(time * 0.25) * 0.35 : -0.18, 1.5, dt)
     }
     const done = checks.filter(Boolean).length
+    tagAge.current += dt
+    lastTag.on = last.index >= 0 && checks[last.index] && tagAge.current < 2.8 && !active ? 1 : 0
+    lastTag.color.set(ready ? C.gold : C.cyan)
+    if (last.index >= 0 && mods.current[last.index]) lastAt.copy(mods.current[last.index]!.position)
     checks.forEach((on, i) => {
+      const focused = focusIndex === i
       const s = segs.current[i]
       if (s) {
         const m = s.material as THREE.MeshStandardMaterial
         tmp.copy(on ? (ready ? cGold : cOn) : cOff)
         m.emissive.lerp(tmp, 1 - Math.exp(-6 * dt))
         m.emissiveIntensity = on ? (active ? 0.9 + 0.3 * Math.sin(time * 6 - i) : 0.8) : 0.15
+        if (focused) {
+          m.emissive.set(C.white)
+          m.emissiveIntensity = 0.9
+        }
       }
       const g = mods.current[i]
       if (g) {
@@ -61,7 +81,7 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
         const a = angles[i]
         g.position.x = approach(g.position.x, Math.cos(a) * r, 5, dt)
         g.position.y = approach(g.position.y, Math.sin(a) * r, 5, dt)
-        const sc = approach(g.scale.x, on ? 1 : 0.6, 5, dt)
+        const sc = approach(g.scale.x, (on ? 1 : 0.6) * (focused ? 1.35 : 1), 5, dt)
         g.scale.setScalar(sc)
         const box = g.children[0] as THREE.Mesh
         ;(box.material as THREE.MeshStandardMaterial).emissiveIntensity = on ? 0.9 : 0.05
@@ -141,8 +161,15 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
             <mesh geometry={unitBox} scale={0.34} rotation={[0, 0, a]}>
               <meshStandardMaterial color="#101a33" emissive={C.cyan} emissiveIntensity={0.05} metalness={0.5} roughness={0.3} />
             </mesh>
-            <Label position={[Math.cos(a) * 0.48, Math.sin(a) * 0.48, 0]} size={0.15} color="#8a93a8">
-              {String(i + 1).padStart(2, '0')}
+            <Label
+              position={[Math.cos(a) * 0.36, Math.sin(a) * 0.36, 0]}
+              size={0.22}
+              color={focusIndex === i ? C.white : checks[i] ? '#b9e8ff' : '#4a5470'}
+              anchorX={Math.cos(a) > 0.35 ? 'left' : Math.cos(a) < -0.35 ? 'right' : 'center'}
+              anchorY={Math.cos(a) > 0.35 || Math.cos(a) < -0.35 ? 'middle' : Math.sin(a) > 0 ? 'bottom' : 'top'}
+              letterSpacing={0.06}
+            >
+              {`${String(i + 1).padStart(2, '0')} ${launchpad.checks[i]?.code ?? ''}`}
             </Label>
           </group>
         </group>
@@ -166,8 +193,8 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
 
       {/* paquetes en órbita al activar */}
       <group ref={orbit} visible={false}>
-        {Array.from({ length: 8 }, (_, i) => {
-          const a = (i / 8) * Math.PI * 2
+        {Array.from({ length: 4 }, (_, i) => {
+          const a = (i / 4) * Math.PI * 2
           return (
             <sprite key={i} position={[Math.cos(a) * R_SEG, Math.sin(a) * R_SEG, 0.25]} scale={0.7}>
               <spriteMaterial map={tex} color={i % 2 ? C.gold : C.cyan} transparent blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
@@ -176,17 +203,34 @@ function Machine({ checks, active }: { checks: boolean[]; active: boolean }) {
         })}
       </group>
 
+      {last.index >= 0 && (
+        <FloatTag ctl={lastTag} position={[0, -1.78, 0.6]} text={`CHECK ${String(last.index + 1).padStart(2, '0')} · ${launchpad.checks[last.index]?.code ?? ''}`} icon="check" size={0.24} />
+      )}
+      <PulseRing ctl={lastPulse} color={C.cyan} at={lastAt} radius={0.42} />
+
       <TechFloor y={-4.8} opacity={0.5} />
       <Particles count={60} opacity={0.25} />
     </group>
   )
 }
 
-export default function LaunchScene({ visible, checks, active }: { visible: boolean; checks: boolean[]; active: boolean }) {
+export default function LaunchScene({
+  visible,
+  checks,
+  active,
+  focusIndex = null,
+  last = { index: -1, key: 0 },
+}: {
+  visible: boolean
+  checks: boolean[]
+  active: boolean
+  focusIndex?: number | null
+  last?: { index: number; key: number }
+}) {
   return (
     <Stage3D visible={visible} camera={{ position: [0, 0.9, 12], fov: 40 }}>
       <fog attach="fog" args={[C.bg, 14, 28]} />
-      <Machine checks={checks} active={active} />
+      <Machine checks={checks} active={active} focusIndex={focusIndex} last={last} />
     </Stage3D>
   )
 }

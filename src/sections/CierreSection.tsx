@@ -16,7 +16,7 @@ export function CierreSection() {
           <SceneSlot className="stage__canvas" label="La arquitectura completa del módulo; al final aparecen nodos de decisión como adelanto del siguiente paso" fallback={<FallbackFlow labels={['MAPEAR', 'DISEÑAR', 'CONECTAR', 'PROBAR', 'DECIDIR']} accent="#f5a524" />}>
             {({ visible }) => <NetworkScene visible={visible} variant="closing" progress={progress} beats={5} />}
           </SceneSlot>
-          <div className="closing__veil" aria-hidden />
+          <div className="closing__veil" data-beat={beat} aria-hidden />
 
           <div className="stage__overlay closing__layout">
             <div className={`closing__block ${beat === 0 ? 'is-on' : ''}`} aria-hidden={beat !== 0}>
@@ -30,7 +30,7 @@ export function CierreSection() {
             <div className={`closing__block ${beat === 1 ? 'is-on' : ''}`} aria-hidden={beat !== 1}>
               <ul className="closing__verbs">
                 {cierre.verbs.map((v, i) => (
-                  <li key={v} style={{ transitionDelay: `${beat === 1 ? 0.15 + i * 0.35 : 0}s` }}>
+                  <li key={v} style={{ transitionDelay: `${beat === 1 ? 0.2 + i * 0.6 : 0}s` }}>
                     {v}
                   </li>
                 ))}

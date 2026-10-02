@@ -32,6 +32,9 @@ const DECISION: [number, number, number][] = [
 ]
 const PACKETS = 7
 
+/** Capa (columna) de cada nodo: 0 (inicio) … 5 (final). */
+const layerOf = (i: number) => Math.round((POS[i][0] + 6) / 2.4)
+
 function layerDelay(i: number) {
   return 0.6 + ((POS[i][0] + 6) / 12) * 3.2 + (i % 2) * 0.12
 }
@@ -63,6 +66,8 @@ function Network({ variant, progress, beats }: { variant: 'boot' | 'closing'; pr
   const root = useRef<THREE.Group>(null)
 
   const stage = () => progress.current * (beats - 1)
+  const verbT = useRef(0)
+  const verbStart = useRef<number | null>(null)
 
   useCameraRig((t) => {
     const s = stage()
@@ -86,6 +91,12 @@ function Network({ variant, progress, beats }: { variant: 'boot' | 'closing'; pr
     const s = stage()
     const motion = isMotion()
 
+    // reloj real (no el de la escena) para ir al mismo ritmo que el texto CSS aunque bajen los fps
+    const inVerbs = variant === 'closing' && Math.round(s) === 1
+    if (inVerbs && verbStart.current === null) verbStart.current = performance.now()
+    if (!inVerbs) verbStart.current = null
+    verbT.current = !inVerbs ? 0 : motion ? (performance.now() - (verbStart.current ?? 0)) / 1000 : 99
+
     // Encendido de nodos y haces
     nodes.forEach((n, i) => {
       if (variant === 'boot') {
@@ -96,10 +107,12 @@ function Network({ variant, progress, beats }: { variant: 'boot' | 'closing'; pr
       } else {
         n.show = 1
         // beat 1: pulsos secuenciales (verbos); beat 2: el flujo se apaga
-        const seq = range(s, 0.5, 1.5)
-        const wave = Math.max(0, Math.sin(t * 2.4 - i * 0.6))
-        n.glow = s < 1.6 ? 0.35 + wave * 0.5 * seq : 0.12
-        n.color.set(i === 11 && s > 2.4 ? C.gold : i === 0 ? C.gold : i === 11 ? C.white : C.cyan)
+        // beat 1: cada verbo enciende su tramo de la red, en el mismo ritmo que el texto
+        const verbs = Math.max(0, Math.min(5, Math.floor((verbT.current - 0.2) / 0.6) + 1))
+        const lit = layerOf(i) <= verbs
+        const newest = layerOf(i) === verbs || (verbs === 1 && layerOf(i) === 0)
+        n.glow = Math.round(s) === 1 ? (lit ? (newest ? 1 : 0.6) : 0.04) : s < 1.6 ? 0.45 : 0.12
+        n.color.set(Math.round(s) === 1 && lit && newest ? C.gold : i === 11 && s > 2.4 ? C.gold : i === 0 ? C.gold : i === 11 ? C.white : C.cyan)
       }
     })
     EDGES.forEach(([a], i) => {
@@ -109,7 +122,9 @@ function Network({ variant, progress, beats }: { variant: 'boot' | 'closing'; pr
         b.opacity = s > 0.5 ? 0.25 : 0.45
       } else {
         b.grow = 1
-        b.opacity = s > 1.6 ? 0.14 : 0.42
+        const verbs = Math.max(0, Math.min(5, Math.floor((verbT.current - 0.2) / 0.6) + 1))
+        const bothLit = layerOf(EDGES[i][0]) <= verbs && layerOf(EDGES[i][1]) <= verbs
+        b.opacity = Math.round(s) === 1 ? (bothLit ? 0.75 : 0.06) : s > 1.6 ? 0.14 : 0.42
       }
     })
 

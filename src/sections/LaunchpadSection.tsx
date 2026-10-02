@@ -1,5 +1,6 @@
 import { lazy, useEffect, useRef, useState } from 'react'
-import { launchpad } from '../data/courseContent'
+import { launchpad, see } from '../data/courseContent'
+import { SceneCaption } from '../components/SceneCaption'
 import { ScreenSection, SectionHead } from '../components/Section'
 import { SceneSlot } from '../components/SceneSlot'
 import { ScrambleText } from '../components/RevealText'
@@ -33,7 +34,13 @@ export function LaunchpadSection() {
   const done = checks.filter(Boolean).length
   const ready = done === checks.length
 
+  // Para leer la máquina: qué check se acaba de marcar y cuál señala el cursor
+  const [last, setLast] = useState({ index: -1, key: 0 })
+  const [focusIndex, setFocusIndex] = useState<number | null>(null)
+  const markLast = (i: number) => setLast((l) => ({ index: i, key: l.key + 1 }))
+
   const toggle = (i: number) => {
+    if (!checks[i]) markLast(i)
     setChecks((c) => c.map((v, j) => (j === i ? !v : v)))
     setActive(false)
   }
@@ -45,6 +52,7 @@ export function LaunchpadSection() {
         const i = c.indexOf(false)
         if (i >= 0) {
           setChecks(c.map((v, j) => (j === i ? true : v)))
+          setLast((l) => ({ index: i, key: l.key + 1 }))
           return true
         }
         if (!a) {
@@ -77,7 +85,7 @@ export function LaunchpadSection() {
       <div className="stage stage--static">
         <div className="launch__scene">
           <SceneSlot className="stage__canvas" label={`Máquina de lanzamiento: ${done} de ${checks.length} checks completos${active ? ', workflow activo' : ''}`} fallback={<LaunchFallback checks={checks} />}>
-            {({ visible }) => <LaunchScene visible={visible} checks={checks} active={active} />}
+            {({ visible }) => <LaunchScene visible={visible} checks={checks} active={active} focusIndex={focusIndex} last={last} />}
           </SceneSlot>
           <div className={`launch__status ${ready ? 'is-ready' : ''} ${active ? 'is-active' : ''}`} aria-live="polite">
             {active ? (
@@ -90,6 +98,10 @@ export function LaunchpadSection() {
               </span>
             )}
           </div>
+          <SceneCaption
+            className="launch__caption"
+            text={active ? see.launchpad.active : ready ? see.launchpad.ready : done === 0 ? see.launchpad.idle : see.launchpad.progress.replace('{n}', String(checks.length - done))}
+          />
         </div>
 
         <div className="stage__overlay launch__layout">
@@ -102,7 +114,15 @@ export function LaunchpadSection() {
             <ol className="checklist" aria-label="Checklist de lanzamiento">
               {launchpad.checks.map((c, i) => (
                 <li key={c.code}>
-                  <button className={`check ${checks[i] ? 'is-on' : ''}`} aria-pressed={checks[i]} onClick={() => toggle(i)}>
+                  <button
+                    className={`check ${checks[i] ? 'is-on' : ''}`}
+                    aria-pressed={checks[i]}
+                    onClick={() => toggle(i)}
+                    onMouseEnter={() => setFocusIndex(i)}
+                    onMouseLeave={() => setFocusIndex(null)}
+                    onFocus={() => setFocusIndex(i)}
+                    onBlur={() => setFocusIndex(null)}
+                  >
                     <span className="check__box" aria-hidden>
                       {checks[i] && <IconCheck />}
                     </span>

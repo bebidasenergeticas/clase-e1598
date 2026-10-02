@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { pipelineNodes, type FailureId } from '../data/courseContent'
-import { Beam, C, Node3D, Particles, Stage3D, TechFloor, approach, getGlowTexture, isMotion, makeAnim, makeBeam, unitBox, unitSphere, useCameraRig, useStageFit } from './common/kit'
+import { breakStory, failures, pipelineNodes, type FailureId } from '../data/courseContent'
+import { Beam, C, FloatTag, Node3D, Particles, PulseRing, Stage3D, TechFloor, approach, getGlowTexture, isMotion, makeAnim, makeBeam, makePulse, makeTag, unitBox, unitSphere, useCameraRig, useStageFit } from './common/kit'
 
 /**
  * HAPPY PATH → BREAK THE WORKFLOW → DEFENSIVE AUTOMATION
  * Un paquete recorre el sistema; según el fallo elegido el recorrido cambia.
  */
 export type BreakMode = 'happy' | 'broken' | 'defended'
+
+/** Lo que el DOM narra: en qué nodo va el paquete y qué está pasando. */
+export interface BreakStep {
+  node: number
+  status: 'travel' | 'fail' | 'detour' | 'done'
+}
 
 const X = [-6.25, -3.75, -1.25, 1.25, 3.75, 6.25]
 const node = (i: number, y = 0) => new THREE.Vector3(X[i], y, 0)
@@ -19,6 +25,8 @@ interface WP {
   style?: Style
   color?: string
   fade?: boolean
+  /** nodo del pipeline (para narrar); -2 = desvío de defensa */
+  node?: number
 }
 
 interface Plan {
@@ -35,41 +43,41 @@ interface Plan {
 }
 
 const pathTo = (n: number, style: Style = 'sphere', color: string = C.cyan): WP[] =>
-  Array.from({ length: n + 1 }, (_, i) => ({ p: node(i), pause: 0.18, style, color }))
+  Array.from({ length: n + 1 }, (_, i) => ({ p: node(i), pause: 0.42, style, color, node: i }))
 
 function makePlan(mode: BreakMode, f: FailureId | null): Plan {
   const base: Plan = { routes: [pathTo(5)], offsets: [0], breakAt: null, guardAt: null, top: null, review: null, spinner: null, rows: 0, brokenBeam: null, endPause: 1.1 }
-  if (mode === 'happy' || !f) return { ...base, routes: [[...pathTo(5).slice(0, 5), { p: node(5), pause: 0.2, color: C.green }]] }
+  if (mode === 'happy' || !f) return { ...base, routes: [[...pathTo(5).slice(0, 5), { p: node(5), pause: 0.4, color: C.green, node: 5 }]], endPause: 1.8 }
   const broken = mode === 'broken'
   switch (f) {
     case 'EMPTY_EMAIL':
       return broken
-        ? { ...base, routes: [[...pathTo(2, 'hollow', '#8a93a8'), { p: node(3), pause: 0, style: 'hollow', color: C.red }]], breakAt: 3, endPause: 2.6 }
-        : { ...base, routes: [[...pathTo(1, 'hollow', '#8a93a8'), { p: node(1, -1.9), pause: 0.2, style: 'hollow', color: C.gold }]], guardAt: 1, review: 1, endPause: 2 }
+        ? { ...base, routes: [[...pathTo(2, 'hollow', '#8a93a8'), { p: node(3), pause: 0, style: 'hollow', color: C.red, node: 3 }]], breakAt: 3, endPause: 3.6 }
+        : { ...base, routes: [[...pathTo(1, 'hollow', '#8a93a8'), { p: node(1, -1.9), pause: 0.2, style: 'hollow', color: C.gold, node: -2 }]], guardAt: 1, review: 1, endPause: 3 }
     case 'DUPLICATE':
       return broken
-        ? { ...base, routes: [pathTo(5), pathTo(5)], offsets: [0, 0.45], breakAt: 3, rows: 2, endPause: 1.6 }
-        : { ...base, routes: [pathTo(5), [...pathTo(3), { p: node(3, 0.01), fade: true }]], offsets: [0, 0.45], guardAt: 3, rows: 1, endPause: 1.6 }
+        ? { ...base, routes: [pathTo(5), pathTo(5)], offsets: [0, 0.6], breakAt: 3, rows: 2, endPause: 2.6 }
+        : { ...base, routes: [pathTo(5), [...pathTo(3), { p: node(3, 0.01), fade: true, node: 3 }]], offsets: [0, 0.6], guardAt: 3, rows: 1, endPause: 2.2 }
     case 'API_TIMEOUT':
       return broken
-        ? { ...base, routes: [[...pathTo(3), { p: node(4), pause: 0, color: C.red }]], breakAt: 4, spinner: 4, endPause: 3 }
-        : { ...base, routes: [[...pathTo(3), { p: node(4), pause: 1.8, color: C.gold }, { p: node(5), pause: 0.2, color: C.green }]], guardAt: 4, spinner: 4, endPause: 1.4 }
+        ? { ...base, routes: [[...pathTo(3), { p: node(4), pause: 0, color: C.red, node: 4 }]], breakAt: 4, spinner: 4, endPause: 4 }
+        : { ...base, routes: [[...pathTo(3), { p: node(4), pause: 2.4, color: C.gold, node: 4 }, { p: node(5), pause: 0.4, color: C.green, node: 5 }]], guardAt: 4, spinner: 4, endPause: 2.2 }
     case 'CREDENTIAL_EXPIRED':
       return broken
-        ? { ...base, routes: [[...pathTo(2), { p: new THREE.Vector3(0, 0, 0), pause: 0, color: C.red }]], breakAt: 3, brokenBeam: 2, endPause: 2.6 }
-        : { ...base, routes: [[...pathTo(2), { p: new THREE.Vector3(0, 0, 0), pause: 0.25, color: C.gold }, { p: node(3, 1.9), pause: 0.2, color: C.gold }]], guardAt: 3, brokenBeam: 2, top: { at: 3, label: 'RESPONSABLE' }, endPause: 2 }
+        ? { ...base, routes: [[...pathTo(2), { p: new THREE.Vector3(0, 0, 0), pause: 0, color: C.red, node: 3 }]], breakAt: 3, brokenBeam: 2, endPause: 3.6 }
+        : { ...base, routes: [[...pathTo(2), { p: new THREE.Vector3(0, 0, 0), pause: 0.5, color: C.gold, node: 3 }, { p: node(3, 1.9), pause: 0.2, color: C.gold, node: -2 }]], guardAt: 3, brokenBeam: 2, top: { at: 3, label: 'RESPONSABLE' }, endPause: 3 }
     case 'INVALID_FORMAT':
       return broken
-        ? { ...base, routes: [[...pathTo(2, 'cube', C.red).map((w) => ({ ...w, color: C.cyan })), { p: node(1, 0), pause: 0, style: 'cube' as Style, color: C.red }]], breakAt: 2, endPause: 2.4 }
-        : { ...base, routes: [[...pathTo(1, 'cube'), { p: node(2), pause: 0.4, style: 'sphere', color: C.cyan }, ...pathTo(5).slice(3)]], guardAt: 2, endPause: 1.2 }
+        ? { ...base, routes: [[...pathTo(2, 'cube', C.red).map((w) => ({ ...w, color: C.cyan })), { p: node(1, 0), pause: 0, style: 'cube' as Style, color: C.red, node: 2 }]], breakAt: 2, endPause: 3.4 }
+        : { ...base, routes: [[...pathTo(1, 'cube'), { p: node(2), pause: 1, style: 'sphere', color: C.cyan, node: 2 }, ...pathTo(5).slice(3)]], guardAt: 2, endPause: 2 }
     case 'HUMAN_REQUIRED':
       return broken
-        ? { ...base, routes: [[...pathTo(1), { p: node(2), pause: 0, color: C.gold }]], breakAt: 2, endPause: 3 }
-        : { ...base, routes: [[...pathTo(2), { p: node(2, 1.9), pause: 1.4, color: C.gold }, { p: node(2), pause: 0.1, color: C.cyan }, ...pathTo(5).slice(3)]], guardAt: 2, top: { at: 2, label: 'HUMANO' }, endPause: 1.2 }
+        ? { ...base, routes: [[...pathTo(1), { p: node(2), pause: 0, color: C.gold, node: 2 }]], breakAt: 2, endPause: 4 }
+        : { ...base, routes: [[...pathTo(2), { p: node(2, 1.9), pause: 1.8, color: C.gold, node: -2 }, { p: node(2), pause: 0.2, color: C.cyan, node: 2 }, ...pathTo(5).slice(3)]], guardAt: 2, top: { at: 2, label: 'HUMANO' }, endPause: 2 }
   }
 }
 
-const SPEED = 3.4
+const SPEED = 2.7
 
 function sample(route: WP[], t: number, out: THREE.Vector3) {
   // devuelve índice del último waypoint alcanzado
@@ -102,7 +110,7 @@ function routeDuration(route: WP[]) {
   return acc
 }
 
-function PacketMesh({ gRef }: { gRef: React.RefObject<THREE.Group | null> }) {
+function PacketMesh({ gRef, children }: { gRef: React.RefObject<THREE.Group | null>; children?: React.ReactNode }) {
   const tex = getGlowTexture()
   return (
     <group ref={gRef}>
@@ -118,6 +126,7 @@ function PacketMesh({ gRef }: { gRef: React.RefObject<THREE.Group | null> }) {
       <sprite scale={1.1}>
         <spriteMaterial map={tex} color={C.cyan} transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
       </sprite>
+      {children}
     </group>
   )
 }
@@ -132,8 +141,18 @@ const colors = {
   violet: new THREE.Color(C.violet),
 }
 
-function Pipeline({ mode, failure, runKey }: { mode: BreakMode; failure: FailureId | null; runKey: number }) {
+function Pipeline({ mode, failure, runKey, onStep }: { mode: BreakMode; failure: FailureId | null; runKey: number; onStep?: (s: BreakStep) => void }) {
   const plan = useMemo(() => makePlan(mode, failure), [mode, failure])
+  const fdata = failures.find((f) => f.id === failure)
+  const payload = breakStory.payload[mode === 'happy' || !failure ? 'HAPPY' : failure]
+  const lastStep = useRef('')
+  const tags = useMemo(
+    () => ({ payload: makeTag(C.white, 1), payload2: makeTag(C.white, 1), fail: makeTag(C.red), down: makeTag('#8a93a8'), guard: makeTag(C.cyan), effect: makeTag(C.gold), done: makeTag(C.green) }),
+    [],
+  )
+  const pulses = useMemo(() => ({ fail: makePulse(), guard: makePulse() }), [])
+  const tagPos = useMemo(() => ({ fail: new THREE.Vector3(), down: new THREE.Vector3(), guard: new THREE.Vector3(), effect: new THREE.Vector3(), done: new THREE.Vector3(X[5], 1.05, 0.5) }), [])
+  const flags = useRef({ failed: false, guarded: false })
   const elapsed = useRef(0)
   useEffect(() => {
     elapsed.current = 0
@@ -159,7 +178,7 @@ function Pipeline({ mode, failure, runKey }: { mode: BreakMode; failure: Failure
 
   useCameraRig(() => ({ pos: new THREE.Vector3(0, 2.2, 13.5), look: new THREE.Vector3(0, 0, 0) }), 2)
   // Título arriba, controles abajo y tarjeta de fallo/defensa a la derecha
-  useStageFit(root, () => ({ w: 15.4, h: 5.6, top: 0.29, bottom: 0.25, right: mode === 'happy' ? 0.02 : 0.3 }))
+  useStageFit(root, () => ({ w: 15.4, h: 5.6, top: 0.42, bottom: 0.24, right: mode === 'happy' ? 0.02 : 0.3 }))
 
   useFrame((state, d) => {
     const dt = Math.min(d, 0.05)
@@ -231,6 +250,50 @@ function Pipeline({ mode, failure, runKey }: { mode: BreakMode; failure: Failure
       b.grow = brokenBeam && mode === 'broken' ? 0.48 : 1
       b.opacity = brokenBeam && mode === 'broken' ? 0.4 + 0.4 * Math.abs(Math.sin(tt * 10)) : 0.5
     })
+
+    // ---- Narración + rótulos -------------------------------------------
+    const route0 = plan.routes[0]
+    let lastNode = 0
+    for (let j = 0; j <= reached; j++) if ((route0[j].node ?? -1) >= 0) lastNode = route0[j].node!
+    const atEnd = reached === route0.length - 1 && local - plan.offsets[0] >= routeDuration(route0) - 0.01
+    const guardIdx = plan.guardAt !== null ? route0.findIndex((w) => w.node === plan.guardAt) : -1
+    const guarded = mode === 'defended' && guardIdx >= 0 && reached >= guardIdx
+    const detour = mode === 'defended' && route0.slice(0, reached + 1).some((w) => w.node === -2)
+    let step: BreakStep
+    if (failed) step = { node: plan.breakAt!, status: 'fail' }
+    else if (detour || (guarded && mode === 'defended' && !atEnd && lastNode === plan.guardAt)) step = { node: plan.guardAt ?? lastNode, status: 'detour' }
+    else if (atEnd && route0[route0.length - 1].node === 5) step = { node: 5, status: 'done' }
+    else step = { node: lastNode, status: 'travel' }
+    const key = `${step.node}|${step.status}`
+    if (key !== lastStep.current) {
+      lastStep.current = key
+      onStep?.(step)
+    }
+    if (failed && !flags.current.failed) pulses.fail.n++
+    if (guarded && !flags.current.guarded) pulses.guard.n++
+    flags.current = { failed, guarded }
+
+    if (plan.breakAt !== null) {
+      tagPos.fail.set(X[plan.breakAt], 1.05, 0.5)
+      const firstDown = plan.breakAt + 1
+      tagPos.down.set(firstDown <= 5 ? (X[firstDown] + X[5]) / 2 : X[5], 1.05, 0.5)
+    }
+    if (plan.guardAt !== null) {
+      tagPos.guard.set(X[plan.guardAt], 1.05, 0.5)
+      if (plan.review !== null) tagPos.effect.set(X[plan.review] + 1.75, -1.9, 0.5)
+      else if (plan.top) tagPos.effect.set(X[plan.top.at] + 1.95, 1.9, 0.5)
+      else tagPos.effect.set(X[plan.guardAt], 1.6, 0.5)
+    }
+    // el rótulo de contenido acompaña al paquete solo sobre la línea principal (no encima de HUMANO/REVISIÓN)
+    tags.payload.on = packets[0].current && Math.abs(packets[0].current.position.y) < 0.3 ? 1 : 0
+    tags.payload2.on = packets[1].current && Math.abs(packets[1].current.position.y) < 0.3 ? 1 : 0
+    tags.fail.on = failed ? 1 : 0
+    tags.fail.color.set(failure === 'HUMAN_REQUIRED' ? C.gold : C.red)
+    tags.down.on = failed && plan.breakAt !== null && plan.breakAt < 5 ? 1 : 0
+    tags.guard.on = guarded ? 1 : 0
+    tags.effect.on = guarded && (detour || plan.review === null) ? 1 : 0
+    tags.done.on = atEnd && (mode === 'happy' || mode === 'defended') && route0[route0.length - 1].node === 5 ? 1 : 0
+    tags.done.color.set(mode === 'happy' ? C.green : C.violet)
 
     // nodo superior (humano / responsable) y revisión
     if (plan.top) {
@@ -310,19 +373,30 @@ function Pipeline({ mode, failure, runKey }: { mode: BreakMode; failure: Failure
         </mesh>
       </group>
 
-      <PacketMesh gRef={packets[0]} />
-      <PacketMesh gRef={packets[1]} />
+      <PacketMesh gRef={packets[0]}>
+        <FloatTag ctl={tags.payload} text={payload} position={[0, 0.48, 0]} size={0.14} />
+      </PacketMesh>
+      <PacketMesh gRef={packets[1]}>{plan.routes.length > 1 && <FloatTag ctl={tags.payload2} text={payload} position={[0, -0.48, 0]} size={0.14} />}</PacketMesh>
+
+      {/* Capas de lectura */}
+      {fdata && <FloatTag ctl={tags.fail} at={tagPos.fail} text={fdata.label} icon={failure === 'HUMAN_REQUIRED' ? 'dot' : 'x'} size={0.17} />}
+      <FloatTag ctl={tags.down} at={tagPos.down} text={breakStory.downstream} icon="x" />
+      {fdata && <FloatTag ctl={tags.guard} at={tagPos.guard} text={fdata.defenses.join(' + ')} icon="check" size={0.16} />}
+      {failure && <FloatTag ctl={tags.effect} at={tagPos.effect} text={breakStory.detour[failure]} icon="arrow" />}
+      <FloatTag ctl={tags.done} at={tagPos.done} text={mode === 'happy' ? 'completado' : breakStory.logged} icon="check" />
+      <PulseRing ctl={pulses.fail} color={failure === 'HUMAN_REQUIRED' ? C.gold : C.red} at={tagPos.fail} radius={0.6} />
+      <PulseRing ctl={pulses.guard} color={C.cyan} at={tagPos.guard} radius={0.6} />
       <TechFloor y={-3.8} opacity={0.55} />
       <Particles count={70} opacity={0.25} />
     </group>
   )
 }
 
-export default function BreakScene({ visible, mode, failure, runKey }: { visible: boolean; mode: BreakMode; failure: FailureId | null; runKey: number }) {
+export default function BreakScene({ visible, mode, failure, runKey, onStep }: { visible: boolean; mode: BreakMode; failure: FailureId | null; runKey: number; onStep?: (s: BreakStep) => void }) {
   return (
     <Stage3D visible={visible} camera={{ position: [0, 2.2, 13.5], fov: 40 }}>
       <fog attach="fog" args={[C.bg, 16, 30]} />
-      <Pipeline mode={mode} failure={failure} runKey={runKey} />
+      <Pipeline mode={mode} failure={failure} runKey={runKey} onStep={onStep} />
     </Stage3D>
   )
 }

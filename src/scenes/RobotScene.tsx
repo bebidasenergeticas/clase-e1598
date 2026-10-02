@@ -1,12 +1,22 @@
 import { useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { C, Particles, Stage3D, TechFloor, approach, getBox, getGlowTexture, isMotion, range, smooth, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { C, FloatTag, Particles, PulseRing, Stage3D, TechFloor, approach, getBox, getGlowTexture, isMotion, makePulse, makeTag, range, smooth, useCameraRig, useSceneClock, useStageFit, type PulseCtl, type TagCtl } from './common/kit'
 
 /**
  * Brazo robótico abstracto que se ensambla pieza por pieza: una pieza por regla.
  * Stage 0..5 (5 = completo: el brazo trabaja moviendo un paquete de datos).
  */
+
+/** Rótulo "REGLA 0n" + pulso que acompañan a la pieza recién ensamblada. */
+function PartTag({ n, tag, pulse, at }: { n: number; tag: TagCtl; pulse: PulseCtl; at: [number, number, number] }) {
+  return (
+    <>
+      <FloatTag ctl={tag} text={`REGLA ${String(n).padStart(2, '0')}`} icon="check" position={at} size={0.16} />
+      <PulseRing ctl={pulse} color={C.gold} position={[0, at[1] * 0.4, 0]} radius={0.5} />
+    </>
+  )
+}
 
 function Part({ k, from, children }: { k: { current: number }; from: [number, number, number]; children: ReactNode }) {
   const g = useRef<THREE.Group>(null)
@@ -57,6 +67,9 @@ function Robot({ progress, beats }: { progress: { current: number }; beats: numb
   const ring = useRef<THREE.MeshBasicMaterial>(null)
   const packet = useRef<THREE.Group>(null)
   const ks = useMemo(() => Array.from({ length: 5 }, () => ({ current: 0 })), [])
+  const partTags = useMemo(() => Array.from({ length: 5 }, () => makeTag(C.gold)), [])
+  const partPulses = useMemo(() => Array.from({ length: 5 }, () => makePulse()), [])
+  const landed = useRef([false, false, false, false, false])
   const tex = getGlowTexture()
   const stageOf = () => progress.current * (beats - 1)
 
@@ -73,7 +86,13 @@ function Robot({ progress, beats }: { progress: { current: number }; beats: numb
     const s = stageOf()
     const time = t.current
     const complete = range(s, 4.6, 5)
+    // la pieza de la regla actual muestra su número; al encajar, pulsa
+    const beatNow = Math.round(s)
+    partTags.forEach((tg, i) => (tg.on = beatNow === i && s < 4.6 ? 1 : 0))
     ks.forEach((k, i) => {
+      const isIn = k.current > 0.95
+      if (isIn && !landed.current[i]) partPulses[i].n++
+      landed.current[i] = isIn
       k.current = approach(k.current, range(s, i - 0.85, i - 0.15), 6, dt)
     })
     // Pose: recogida → brazo trabajando cuando está completo
@@ -102,6 +121,7 @@ function Robot({ progress, beats }: { progress: { current: number }; beats: numb
      <group position={[0, -2.7, 0]}>
       {/* 01 · base */}
       <Part k={ks[0]} from={[0, -2.5, 0]}>
+        <PartTag n={1} tag={partTags[0]} pulse={partPulses[0]} at={[2.25, 0.35, 0.5]} />
         <mesh position={[0, 0.15, 0]}>
           <cylinderGeometry args={[1.45, 1.6, 0.3, 48]} />
           <meshStandardMaterial color={C.bodyHi} metalness={0.7} roughness={0.3} />
@@ -114,6 +134,7 @@ function Robot({ progress, beats }: { progress: { current: number }; beats: numb
 
       {/* 02 · torreta */}
       <Part k={ks[1]} from={[0, 3, 0]}>
+        <PartTag n={2} tag={partTags[1]} pulse={partPulses[1]} at={[1.75, 0.75, 0.5]} />
         <group ref={turret} position={[0, 0.3, 0]}>
           <mesh position={[0, 0.35, 0]}>
             <cylinderGeometry args={[0.72, 0.85, 0.7, 32]} />
@@ -122,16 +143,19 @@ function Robot({ progress, beats }: { progress: { current: number }; beats: numb
           {/* 03 · brazo inferior */}
           <group ref={shoulder} position={[0, 0.85, 0]}>
             <Part k={ks[2]} from={[-2.5, 1, 0]}>
+              <PartTag n={3} tag={partTags[2]} pulse={partPulses[2]} at={[1.05, 1.1, 0.5]} />
               <Joint r={0.32} />
               <Block size={[0.38, 2.1, 0.42]} position={[0, 1.05, 0]} />
               {/* 04 · brazo superior */}
               <group ref={elbow} position={[0, 2.1, 0]}>
                 <Part k={ks[3]} from={[2.5, 1.5, 0]}>
+                  <PartTag n={4} tag={partTags[3]} pulse={partPulses[3]} at={[0.95, 0.85, 0.5]} />
                   <Joint r={0.26} />
                   <Block size={[0.32, 1.7, 0.36]} position={[0, 0.85, 0]} edge={C.gold} edgeOpacity={0.45} />
                   {/* 05 · muñeca + pinza + sensor */}
                   <group ref={wrist} position={[0, 1.7, 0]}>
                     <Part k={ks[4]} from={[0, 2.5, 1.5]}>
+                      <PartTag n={5} tag={partTags[4]} pulse={partPulses[4]} at={[0.95, 0.35, 0.5]} />
                       <Joint r={0.2} color={C.cyan} />
                       <Block size={[0.5, 0.18, 0.4]} position={[0, 0.22, 0]} />
                       <group ref={fingerL} position={[-0.16, 0.48, 0]}>

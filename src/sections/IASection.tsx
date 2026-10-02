@@ -1,11 +1,14 @@
 import { lazy, useState } from 'react'
-import { ia } from '../data/courseContent'
+import { ia, see, type LegendKey } from '../data/courseContent'
+import { SceneCaption } from '../components/SceneCaption'
 import { BeatDots, SectionHead, StorySection } from '../components/Section'
 import { FallbackFlow, SceneSlot } from '../components/SceneSlot'
 import { RevealText } from '../components/RevealText'
 import type { Shot } from '../scenes/AIScene'
 
 const AIScene = lazy(() => import('../scenes/AIScene'))
+
+const legendFor: LegendKey[][] = [['data'], ['rule', 'ai'], [], ['rule', 'ai']]
 
 function Quiz({ onShot }: { onShot: (s: Shot) => void }) {
   const [revealed, setRevealed] = useState<Record<number, boolean>>({})
@@ -19,7 +22,7 @@ function Quiz({ onShot }: { onShot: (s: Shot) => void }) {
               className={`ai-quiz__item ${on ? `is-${q.answer}` : ''}`}
               onClick={() => {
                 setRevealed((r) => ({ ...r, [i]: !r[i] }))
-                if (!on) onShot({ id: Date.now(), side: q.answer })
+                if (!on) onShot({ id: Date.now(), side: q.answer, label: q.task })
               }}
               aria-pressed={!!on}
             >
@@ -57,6 +60,7 @@ export function IASection() {
                 <h2 className="ia__title" key={beat}>
                   <RevealText text={info.title || ' '} on />
                 </h2>
+                {beat !== 2 && <SceneCaption text={see.ia[beat]} keys={legendFor[beat]} />}
               </div>
 
               {beat === 3 ? (

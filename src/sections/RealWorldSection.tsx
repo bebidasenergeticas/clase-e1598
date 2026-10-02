@@ -1,10 +1,11 @@
-import { lazy, useEffect, useRef, useState } from 'react'
-import { defenses, failures, type FailureId } from '../data/courseContent'
+import { lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { breakStory, defenses, failures, pipelineNodes, type FailureId } from '../data/courseContent'
 import { ScreenSection, SectionHead } from '../components/Section'
 import { FallbackFlow, SceneSlot } from '../components/SceneSlot'
 import { ScrambleText } from '../components/RevealText'
 import { registerStepper } from '../hooks/navigation'
-import type { BreakMode } from '../scenes/BreakScene'
+import type { BreakMode, BreakStep } from '../scenes/BreakScene'
+import { SceneCaption } from '../components/SceneCaption'
 
 const BreakScene = lazy(() => import('../scenes/BreakScene'))
 
@@ -13,16 +14,37 @@ const titles: Record<BreakMode, string> = {
   broken: 'BREAK THE WORKFLOW',
   defended: 'DEFENSIVE AUTOMATION',
 }
+/** Estado de cada nodo en la barra de pasos. */
+function stepClass(step: BreakStep, i: number) {
+  if (step.status === 'fail') return i === step.node ? 'is-fail' : i > step.node ? 'is-off' : 'is-done'
+  if (step.status === 'detour' && i === step.node) return 'is-guard'
+  if (step.status === 'done' || i < step.node) return 'is-done'
+  return i === step.node ? 'is-now' : ''
+}
+
+
 const subtitles: Record<BreakMode, string> = {
   happy: 'Todo sale bien: un paquete recorre el sistema completo.',
   broken: 'El mundo real no avisa. ¿Dónde se rompe?',
   defended: 'No es programación: es arquitectura y pensamiento.',
 }
 
+/** Frase de "qué estás viendo" según el paso actual del paquete. */
+function narrate(mode: BreakMode, step: BreakStep, failure: FailureId | null) {
+  const f = failures.find((x) => x.id === failure)
+  const nodeName = pipelineNodes[step.node]?.label ?? ''
+  if (step.status === 'fail' && f) return `Se rompe en ${nodeName}: ${f.label.toLowerCase()}. Lo que sigue ya no ocurre.`
+  if (step.status === 'detour' && f && failure) return `Defensa en ${nodeName}: ${f.defenses.join(' + ')} → ${breakStory.detour[failure]}.`
+  if (step.status === 'done') return mode === 'happy' ? breakStory.done : `Con la defensa, el registro no se pierde y ${breakStory.logged}.`
+  return `${step.node + 1} · ${breakStory.steps[step.node]}`
+}
+
 export function RealWorldSection() {
   const [mode, setMode] = useState<BreakMode>('happy')
   const [failure, setFailure] = useState<FailureId | null>(null)
   const [runKey, setRunKey] = useState(0)
+  const [step, setStep] = useState<BreakStep>({ node: 0, status: 'travel' })
+  const onStep = useCallback((s: BreakStep) => setStep(s), [])
   const state = useRef({ mode, failure })
   state.current = { mode, failure }
 
@@ -89,7 +111,7 @@ export function RealWorldSection() {
           label={`Simulación 3D del workflow: ${titles[mode]}${current && mode !== 'happy' ? ` · ${current.label}` : ''}`}
           fallback={<FallbackFlow labels={['TRIGGER', 'DATOS', 'REGLA', 'CRM', 'NOTIFICAR', 'LOG']} accent={mode === 'broken' ? '#ff5d5d' : '#6fd3ff'} />}
         >
-          {({ visible }) => <BreakScene visible={visible} mode={mode} failure={failure} runKey={runKey} />}
+          {({ visible }) => <BreakScene visible={visible} mode={mode} failure={failure} runKey={runKey} onStep={onStep} />}
         </SceneSlot>
 
         <div className="stage__overlay rw">
@@ -99,6 +121,18 @@ export function RealWorldSection() {
               <ScrambleText text={titles[mode]} key={mode} />
             </h2>
             <p className="rw__sub">{subtitles[mode]}</p>
+            <SceneCaption
+              text={narrate(mode, step, failure)}
+              extra={
+                <ol className="rw-steps" aria-label="Recorrido del paquete">
+                  {pipelineNodes.map((n, i) => (
+                    <li key={n.id} className={stepClass(step, i)}>
+                      <span>{n.label}</span>
+                    </li>
+                  ))}
+                </ol>
+              }
+            />
           </div>
 
           <aside className={`rw__card panel ${mode === 'happy' ? 'is-hidden' : ''}`} aria-live="polite">

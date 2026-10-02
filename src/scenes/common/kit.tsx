@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { PerformanceMonitor, Text } from '@react-three/drei'
+import { Billboard, PerformanceMonitor, Text } from '@react-three/drei'
 import * as THREE from 'three'
 import monoFont from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff?url'
 import displayFont from '@fontsource/space-grotesk/files/space-grotesk-latin-600-normal.woff?url'
@@ -253,8 +253,8 @@ export function Node3D({
 
   useFrame((state, d) => {
     const dt = Math.min(d, 0.05)
-    anim._show = approach(anim._show, anim.show, 7, dt)
-    anim._glow = approach(anim._glow, anim.glow, 6, dt)
+    anim._show = approach(anim._show, anim.show, 4.5, dt)
+    anim._glow = approach(anim._glow, anim.glow, 5, dt)
     const g = group.current
     if (!g) return
     const s = Math.max(0.0001, anim._show)
@@ -366,7 +366,7 @@ export function Beam({ from, to, anim, thickness = 0.028 }: { from: THREE.Vector
   const mat = useRef<THREE.MeshBasicMaterial>(null)
   useFrame((_, d) => {
     const dt = Math.min(d, 0.05)
-    anim._grow = approach(anim._grow, anim.grow, 5, dt)
+    anim._grow = approach(anim._grow, anim.grow, 3.5, dt)
     anim._opacity = approach(anim._opacity, anim.opacity, 6, dt)
     const m = mesh.current
     if (!m) return
@@ -394,7 +394,7 @@ export function Beam({ from, to, anim, thickness = 0.028 }: { from: THREE.Vector
 /* ------------------------------------------------------------------ */
 /* Paquete de datos                                                     */
 /* ------------------------------------------------------------------ */
-export function Packet({ packetRef, color = C.cyan, size = 0.11 }: { packetRef: React.RefObject<THREE.Group | null>; color?: string; size?: number }) {
+export function Packet({ packetRef, color = C.cyan, size = 0.11, children }: { packetRef: React.RefObject<THREE.Group | null>; color?: string; size?: number; children?: ReactNode }) {
   const tex = getGlowTexture()
   return (
     <group ref={packetRef}>
@@ -404,6 +404,7 @@ export function Packet({ packetRef, color = C.cyan, size = 0.11 }: { packetRef: 
       <sprite scale={size * 9}>
         <spriteMaterial map={tex} color={color} transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
       </sprite>
+      {children}
     </group>
   )
 }
@@ -500,6 +501,11 @@ export interface FitLayout {
   top?: number
   bottom?: number
   max?: number
+  /**
+   * Distancia de referencia para medir el viewport. Úsala cuando la cámara se acerca
+   * según la escala (si no, escala y cámara se retroalimentan).
+   */
+  ref?: number
 }
 const _origin = new THREE.Vector3()
 
@@ -519,12 +525,216 @@ export function useStageFit(root: React.RefObject<THREE.Group | null>, getLayout
     const right = narrow ? 0.02 : (L.right ?? 0.02)
     const top = L.top ?? 0.1
     const bottom = L.bottom ?? 0.12
-    const vp = state.viewport.getCurrentViewport(state.camera, _origin)
-    const s = Math.min(L.max ?? 1, (vp.width * (1 - left - right)) / L.w, (vp.height * (1 - top - bottom)) / L.h)
+    let vw: number, vh: number
+    if (L.ref) {
+      const cam = state.camera as THREE.PerspectiveCamera
+      vh = 2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * L.ref
+      vw = vh * (state.size.width / state.size.height)
+    } else {
+      const vp = state.viewport.getCurrentViewport(state.camera, _origin)
+      vw = vp.width
+      vh = vp.height
+    }
+    const s = Math.min(L.max ?? 1, (vw * (1 - left - right)) / L.w, (vh * (1 - top - bottom)) / L.h)
     if (root.current) root.current.scale.setScalar(approach(root.current.scale.x, s, lambda, dt))
     off.current.x = approach(off.current.x, (left - right) / 2, lambda, dt)
     off.current.y = approach(off.current.y, (top - bottom) / 2, lambda, dt)
     const { width: W, height: H } = state.size
     ;(state.camera as THREE.PerspectiveCamera).setViewOffset(W, H, -off.current.x * W, -off.current.y * H, W, H)
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* Capas de lectura: rótulos de evento, pulsos y temporizadores         */
+/* ------------------------------------------------------------------ */
+
+/** Temporizador de "cuánto lleva activa" una condición (con animaciones off salta al final). */
+export function stepTimer(t: { current: number }, cond: boolean, dt: number) {
+  t.current = cond ? (isMotion() ? t.current + dt : 99) : 0
+  return t.current
+}
+
+export type TagIcon = 'none' | 'x' | 'check' | 'arrow' | 'dot'
+export interface TagCtl {
+  /** 0 = oculto, 1 = visible (con fade) */
+  on: number
+  /** color de acento (texto, línea e icono) */
+  color: THREE.Color
+  /** si es true, al apagarse desaparece al instante (evita rótulos encimados) */
+  hard?: boolean
+}
+export function makeTag(color: string = C.white, on = 0, hard = false): TagCtl {
+  return { on, color: new THREE.Color(color), hard }
+}
+
+const unitPlane = new THREE.PlaneGeometry(1, 1)
+
+/** Segmento (rectángulo fino) entre dos puntos, para dibujar iconos simples. */
+function seg(x1: number, y1: number, x2: number, y2: number, th: number) {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  return {
+    position: [(x1 + x2) / 2, (y1 + y2) / 2, 0] as [number, number, number],
+    rotation: [0, 0, Math.atan2(dy, dx)] as [number, number, number],
+    scale: [Math.hypot(dx, dy) + th, th, 1] as [number, number, number],
+  }
+}
+const ICONS: Record<Exclude<TagIcon, 'none' | 'dot'>, [number, number, number, number][]> = {
+  x: [
+    [-0.32, -0.32, 0.32, 0.32],
+    [-0.32, 0.32, 0.32, -0.32],
+  ],
+  check: [
+    [-0.36, 0.02, -0.1, -0.26],
+    [-0.1, -0.26, 0.38, 0.3],
+  ],
+  arrow: [
+    [-0.38, 0, 0.36, 0],
+    [0.06, 0.28, 0.36, 0],
+    [0.06, -0.28, 0.36, 0],
+  ],
+}
+
+/**
+ * Rótulo 3D de evento: placa oscura + línea de acento + icono + texto.
+ * Siempre mira a la cámara. Se controla con un TagCtl mutable (sin re-render).
+ * `at`: posición viva que el rótulo sigue cada frame.
+ */
+export function FloatTag({
+  text,
+  ctl,
+  position,
+  at,
+  size = 0.15,
+  icon = 'none',
+}: {
+  text: string
+  ctl: TagCtl
+  position?: [number, number, number]
+  at?: THREE.Vector3
+  size?: number
+  icon?: TagIcon
+}) {
+  const g = useRef<THREE.Group>(null)
+  const textRef = useRef<THREE.Mesh & { fillOpacity: number; color: number }>(null)
+  const plate = useRef<THREE.MeshBasicMaterial>(null)
+  const accents = useRef<THREE.MeshBasicMaterial[]>([])
+  const k = useRef(ctl.on)
+  const iconW = icon === 'none' ? 0 : size * 1.25
+  const w = text.length * size * 0.64 + size * 1.3 + iconW
+  const h = size * 2.1
+  const x0 = -w / 2 + size * 0.65
+
+  useFrame((_, d) => {
+    const dt = Math.min(d, 0.05)
+    k.current = ctl.hard && ctl.on === 0 ? 0 : approach(k.current, ctl.on, 6, dt)
+    const v = k.current
+    const gr = g.current
+    if (!gr) return
+    gr.visible = v > 0.01
+    if (!gr.visible) return
+    if (at) gr.position.copy(at)
+    gr.scale.setScalar(0.88 + 0.12 * v)
+    if (plate.current) plate.current.opacity = 0.88 * v
+    accents.current.forEach((m) => {
+      if (!m) return
+      m.color.copy(ctl.color)
+      m.opacity = v
+    })
+    const t = textRef.current
+    if (t) {
+      t.fillOpacity = v
+      t.color = ctl.color.getHex()
+    }
+  })
+
+  const addAccent = (m: THREE.MeshBasicMaterial | null) => {
+    if (m && !accents.current.includes(m)) accents.current.push(m)
+  }
+  const s = size * 0.95
+  return (
+    <group ref={g} position={position} visible={false}>
+      <Billboard>
+        <mesh geometry={unitPlane} scale={[w, h, 1]} renderOrder={20}>
+          <meshBasicMaterial ref={plate} color="#060a15" transparent opacity={0} depthWrite={false} toneMapped={false} />
+        </mesh>
+        <mesh geometry={unitPlane} position={[0, -h / 2, 0.002]} scale={[w, size * 0.1, 1]} renderOrder={21}>
+          <meshBasicMaterial ref={addAccent} transparent depthWrite={false} toneMapped={false} />
+        </mesh>
+        {icon !== 'none' && (
+          <group position={[x0 + iconW * 0.38, 0, 0.003]}>
+            {icon === 'dot' ? (
+              <mesh renderOrder={22}>
+                <circleGeometry args={[s * 0.3, 20]} />
+                <meshBasicMaterial ref={addAccent} transparent depthWrite={false} toneMapped={false} />
+              </mesh>
+            ) : (
+              ICONS[icon].map((c, i) => {
+                const sg = seg(c[0] * s, c[1] * s, c[2] * s, c[3] * s, s * 0.16)
+                return (
+                  <mesh key={i} geometry={unitPlane} position={sg.position} rotation={sg.rotation} scale={sg.scale} renderOrder={22}>
+                    <meshBasicMaterial ref={addAccent} transparent depthWrite={false} toneMapped={false} />
+                  </mesh>
+                )
+              })
+            )}
+          </group>
+        )}
+        <Text
+          ref={textRef}
+          font={monoFont}
+          fontSize={size}
+          anchorX="left"
+          anchorY="middle"
+          position={[x0 + iconW, size * 0.04, 0.004]}
+          letterSpacing={0.04}
+          renderOrder={23}
+          fillOpacity={0}
+        >
+          {text}
+        </Text>
+      </Billboard>
+    </group>
+  )
+}
+
+/** Disparador de pulso: incrementa `n` para lanzar un anillo que se expande. */
+export interface PulseCtl {
+  n: number
+}
+export const makePulse = (): PulseCtl => ({ n: 0 })
+
+/** Anillo que se expande una vez: señala "esto es nuevo" o "aquí pasó algo". */
+export function PulseRing({ ctl, color = C.cyan, radius = 0.6, position, at }: { ctl: PulseCtl; color?: string; radius?: number; position?: [number, number, number]; at?: THREE.Vector3 }) {
+  const holder = useRef<THREE.Group>(null)
+  const mesh = useRef<THREE.Mesh>(null)
+  const mat = useRef<THREE.MeshBasicMaterial>(null)
+  const last = useRef(ctl.n)
+  const age = useRef(99)
+  useFrame((_, d) => {
+    const dt = Math.min(d, 0.05)
+    if (ctl.n !== last.current) {
+      last.current = ctl.n
+      age.current = 0
+    }
+    age.current = isMotion() ? age.current + dt : 99
+    const k = age.current / 1.2
+    const m = mesh.current
+    if (!m || !holder.current) return
+    m.visible = k < 1
+    if (!m.visible) return
+    if (at) holder.current.position.copy(at)
+    m.scale.setScalar(radius * (1 + 1.8 * k))
+    if (mat.current) mat.current.opacity = 0.85 * Math.pow(1 - k, 1.5)
+  })
+  return (
+    <group ref={holder} position={position}>
+      <Billboard>
+        <mesh ref={mesh} visible={false}>
+          <ringGeometry args={[0.9, 1, 48]} />
+          <meshBasicMaterial ref={mat} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </mesh>
+      </Billboard>
+    </group>
+  )
 }

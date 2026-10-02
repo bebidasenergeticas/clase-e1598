@@ -1,9 +1,12 @@
 import { lazy } from 'react'
-import { nivel2 } from '../data/courseContent'
+import { nivel2, see, type LegendKey } from '../data/courseContent'
 import { BeatDots, SectionHead, StorySection } from '../components/Section'
 import { FallbackFlow, SceneSlot } from '../components/SceneSlot'
 import { RevealText } from '../components/RevealText'
 import { SlidePane } from '../pdf/OfficialViewer'
+import { SceneCaption } from '../components/SceneCaption'
+
+const legendFor: LegendKey[][] = [['data'], ['data'], ['data', 'human'], ['data', 'human', 'log'], []]
 
 const Level2Scene = lazy(() => import('../scenes/Level2Scene'))
 
@@ -36,7 +39,7 @@ export function Nivel2Section() {
                   <p className="story-beat__text fade is-on">{info.text}</p>
                 </div>
               </div>
-              <div />
+              <SceneCaption text={see.nivel2[beat]} keys={legendFor[beat]} />
               <div className="stage-track stage-track--two" aria-label="Nivel">
                 <span className={`stage-track__item ${beat <= 1 ? 'is-now is-on' : 'is-on'}`}>NIVEL 1 · LINEAL</span>
                 <span className={`stage-track__item ${beat >= 2 ? 'is-now is-on' : ''}`}>NIVEL 2 · RAMIFICADO</span>

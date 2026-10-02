@@ -282,10 +282,10 @@ export const ia = {
 
 export type ToolId = 'zapier' | 'make' | 'n8n'
 
-export const tools: { id: ToolId; name: string; tradeoff: [string, string]; es: string; page: number }[] = [
-  { id: 'zapier', name: 'ZAPIER', tradeoff: ['SPEED', 'SIMPLICITY'], es: 'Velocidad · Simplicidad', page: 5 },
-  { id: 'make', name: 'MAKE', tradeoff: ['VISUAL', 'FLEXIBILITY'], es: 'Visual · Flexibilidad', page: 6 },
-  { id: 'n8n', name: 'N8N', tradeoff: ['CONTROL', 'EXTENSIBILITY'], es: 'Control · Extensibilidad', page: 7 },
+export const tools: { id: ToolId; name: string; tradeoff: [string, string]; es: string; page: number; metaphor: [string, string] }[] = [
+  { id: 'zapier', name: 'ZAPIER', tradeoff: ['SPEED', 'SIMPLICITY'], es: 'Velocidad · Simplicidad', page: 5, metaphor: ['Anillo de conectores = integraciones listas', 'Bloque compacto = arranque rápido'] },
+  { id: 'make', name: 'MAKE', tradeoff: ['VISUAL', 'FLEXIBILITY'], es: 'Visual · Flexibilidad', page: 6, metaphor: ['Lienzo = diseñas el flujo viéndolo', 'Rutas en varias direcciones'] },
+  { id: 'n8n', name: 'N8N', tradeoff: ['CONTROL', 'EXTENSIBILITY'], es: 'Control · Extensibilidad', page: 7, metaphor: ['Rack propio = tú decides dónde corre', 'Módulo enchufable = código a medida'] },
 ]
 
 export const toolsStatement = {
@@ -553,4 +553,89 @@ export const cierre = {
   line2: 'EL SIGUIENTE PASO ES CONSTRUIR SISTEMAS QUE PUEDAN DECIDIR.',
   final: ['E1598', 'AUTOMATION SYSTEMS', 'WEEK 09 COMPLETE'],
   button: 'FINALIZAR SESIÓN',
+}
+
+/* ------------------------------------------------------------------ */
+/* Capas de lectura de las animaciones (COMPLEMENTO DEL PROFESOR)       */
+/* "Qué estás viendo": una frase por beat/paso para leer cada escena 3D */
+/* ------------------------------------------------------------------ */
+
+export type LegendKey = 'data' | 'problem' | 'human' | 'log' | 'ok' | 'rule' | 'ai'
+
+export const legend: Record<LegendKey, string> = {
+  data: 'Dato que viaja',
+  problem: 'Dato con problema',
+  human: 'Decide una persona',
+  log: 'Registro (log)',
+  ok: 'Llega bien',
+  rule: 'Regla',
+  ai: 'IA',
+}
+
+export const see = {
+  limites: [
+    'Cada punto es un registro (un formulario, un correo). Entra, se procesa y sale.',
+    'Algunos registros llegan mal: el proceso no sabe qué hacer con ellos y se pierden.',
+    'Aparecen rutas nuevas: lo que necesita a una persona va a HUMANO; lo inválido, a EXCEPCIÓN.',
+    'VALIDAR revisa antes de procesar, RETRY reintenta y LOG deja registro de todo.',
+    'Nada se pierde: cada registro termina en un destino conocido.',
+    'Piensa en tu workflow: ¿qué punto rojo te llegaría mañana?',
+  ],
+  nivel2: [
+    'Un solo camino: cada dato pasa por A, luego por B, luego por C.',
+    'IF pregunta antes de avanzar: el dato ya no siempre va al mismo lugar.',
+    'SÍ va a B y NO va a C; si hay duda, decide una persona. C se divide en dos casos.',
+    'Cada pieza nueva se conecta con la parte del flujo que resuelve.',
+    'Un camino es fácil de seguir. Muchos caminos hay que diseñarlos.',
+  ],
+  ia: [
+    'Cada punto es una tarea que entra al flujo. Antes de seguir: ¿regla o IA?',
+    'Izquierda: reglas, siempre el mismo resultado. Derecha: IA, interpreta según el contexto.',
+    'Primero reglas. IA solo donde hay ambigüedad.',
+    'Elige una tarea: el punto viaja al camino que le corresponde.',
+  ],
+  iaPaths: ['mismo input = mismo resultado', 'depende del contexto'],
+  tools: {
+    overview: 'Tres módulos, tres formas de resolver lo mismo. Toca uno para acercarte.',
+    focus: 'Lo que ves es una metáfora del trade-off; los datos oficiales están en la diapositiva.',
+    table: 'Los tres a la vez: compáralos con la tabla oficial.',
+    hover: 'clic para enfocar',
+  },
+  launchpad: {
+    idle: 'Cada check enciende una pieza de la máquina. Sin todas, no arranca.',
+    progress: 'Faltan {n} checks para poder activarlo.',
+    ready: 'Todas las piezas en su lugar: el sistema está listo para activarse.',
+    active: 'El workflow corre solo: dispara → procesa → registra → monitorea → mide.',
+  },
+  rules: {
+    building: 'Cada regla es una pieza del sistema: sin una, no funciona.',
+    done: 'Las 5 piezas juntas: un sistema que trabaja.',
+  },
+}
+
+/** Narración paso a paso de "Break the workflow" (un texto por nodo del pipeline). */
+export const breakStory = {
+  steps: ['Llega el formulario', 'Se leen y mapean los datos', 'La regla decide qué hacer', 'Se guarda en el CRM', 'Se avisa por correo', 'Queda registro en el log'],
+  done: 'Todo salió bien: el registro recorrió el sistema completo.',
+  /** Lo que "lleva" el paquete en cada caso (ejemplo ilustrativo). */
+  payload: {
+    HAPPY: 'formulario',
+    EMPTY_EMAIL: 'email: —',
+    DUPLICATE: 'mismo cliente',
+    API_TIMEOUT: 'correo',
+    CREDENTIAL_EXPIRED: 'fila nueva',
+    INVALID_FORMAT: 'fecha: "mañana"',
+    HUMAN_REQUIRED: '"quiero hablar con alguien"',
+  } as Record<FailureId | 'HAPPY', string>,
+  /** Rótulo del desvío o efecto de la defensa. */
+  detour: {
+    EMPTY_EMAIL: 'a revisión',
+    DUPLICATE: 'se fusiona: 1 sola fila',
+    API_TIMEOUT: 'reintento y continúa',
+    CREDENTIAL_EXPIRED: 'aviso al responsable',
+    INVALID_FORMAT: 'formato corregido',
+    HUMAN_REQUIRED: 'decide una persona',
+  } as Record<FailureId, string>,
+  downstream: 'el resto no se ejecuta',
+  logged: 'queda en LOG',
 }

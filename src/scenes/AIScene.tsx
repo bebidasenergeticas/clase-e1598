@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { Beam, C, Label, Node3D, Particles, Stage3D, approach, getGlowTexture, isMotion, makeAnim, makeBeam, range, unitBox, useCameraRig, useSceneClock, useStageFit } from './common/kit'
+import { Beam, C, Label, Node3D, Particles, Stage3D, approach, getGlowTexture, isMotion, makeAnim, makeBeam, range, unitBox, useCameraRig, useSceneClock, useStageFit, FloatTag, makeTag, stepTimer } from './common/kit'
+import { see } from '../data/courseContent'
 
 /**
  * Bifurcación DETERMINISTIC (rejilla de cubos, rutas rectas) vs INTERPRETATIVE
@@ -22,6 +23,8 @@ const inPath = new THREE.LineCurve3(IN, SPLIT)
 export interface Shot {
   id: number
   side: 'rule' | 'ai'
+  /** texto de la tarea que viaja con el paquete */
+  label: string
 }
 
 function AI({ progress, beats, shot }: { progress: { current: number }; beats: number; shot: Shot | null }) {
@@ -58,10 +61,14 @@ function AI({ progress, beats, shot }: { progress: { current: number }; beats: n
   const N = 8
   const flow = useMemo(() => Array.from({ length: N }, (_, i) => ({ u: i / N, side: i % 2 === 0 ? 'rule' : 'ai' })), [])
   const refs = useMemo(() => Array.from({ length: N + 1 }, () => ({ current: null as THREE.Group | null })), [])
-  const shotState = useRef<{ u: number; side: 'rule' | 'ai' } | null>(null)
+  const shotState = useRef<{ u: number; side: 'rule' | 'ai'; hold: number } | null>(null)
+  const shotGroup = useRef<THREE.Group>(null)
+  const tags = useMemo(() => ({ shot: makeTag(C.white), result: makeTag(C.cyan), pathL: makeTag(C.cyan), pathR: makeTag(C.violet) }), [])
+  const resultAt = useMemo(() => new THREE.Vector3(), [])
+  const openT = useRef(0)
 
   useEffect(() => {
-    if (shot) shotState.current = { u: 0, side: shot.side }
+    if (shot) shotState.current = { u: 0, side: shot.side, hold: 0 }
   }, [shot])
 
   useCameraRig((t) => {
@@ -72,7 +79,7 @@ function AI({ progress, beats, shot }: { progress: { current: number }; beats: n
     }
   }, 2)
 
-  useStageFit(root, () => ({ w: 12.4, h: 6.8, top: 0.23, bottom: 0.3 }))
+  useStageFit(root, () => ({ w: 12.4, h: 6.8, top: 0.33, bottom: stageOf() > 2.5 ? 0.38 : 0.3 }))
 
   const place = (g: THREE.Group, u: number, side: string) => {
     if (u < 0.3) inPath.getPoint(u / 0.3, g.position)
@@ -125,25 +132,40 @@ function AI({ progress, beats, shot }: { progress: { current: number }; beats: n
     flow.forEach((f, i) => {
       const g = refs[i].current
       if (!g) return
-      if (motion) f.u = (f.u + dt * 0.16) % 1
+      if (motion) f.u = (f.u + dt * 0.12) % 1
       const visible = open || f.u < 0.3
       g.visible = visible && statement < 0.5
       place(g, open ? f.u : Math.min(f.u, 0.3), f.side)
       ;((g.children[1] as THREE.Sprite).material as THREE.SpriteMaterial).color.set(f.side === 'rule' || !open ? C.cyan : C.violet)
     })
 
-    const sg = refs[N].current
+    // Rótulos de los caminos (aparecen después de abrirse la bifurcación)
+    const oT = stepTimer(openT, open, dt)
+    const shotActive = !!shotState.current && shotState.current.hold < 4
+    tags.pathL.on = open && oT > 0.8 && statement < 0.5 && !shotActive ? 1 : 0
+    tags.pathR.on = open && oT > 1.2 && statement < 0.5 && !shotActive ? 1 : 0
+
+    // Paquete del quiz: lleva el texto de la tarea y anuncia a dónde llegó
+    const sg = shotGroup.current
     if (sg) {
       const st = shotState.current
-      if (st && st.u < 1) {
-        st.u = motion ? st.u + dt * 0.55 : 1
+      if (st && st.hold < 4) {
+        if (st.u < 1) st.u = motion ? Math.min(1, st.u + dt * 0.3) : 1
+        else st.hold += motion ? dt : 0
         sg.visible = true
-        place(sg, Math.min(1, st.u), st.side)
-        const k = 1.6
-        sg.scale.setScalar(k)
-        ;((sg.children[1] as THREE.Sprite).material as THREE.SpriteMaterial).color.set(st.side === 'rule' ? C.cyan : C.gold)
-      } else sg.visible = false
+        place(sg, st.u, st.side)
+        tags.shot.on = st.u < 1 ? 1 : 0
+        tags.result.on = st.u >= 1 ? 1 : 0
+        tags.result.color.set(st.side === 'rule' ? C.cyan : C.violet)
+        resultAt.copy(sg.position).add(new THREE.Vector3(st.side === 'rule' ? 1.5 : -1.4, 0.3, 0.6))
+        ;((sg.children[0].children[1] as THREE.Sprite).material as THREE.SpriteMaterial).color.set(st.side === 'rule' ? C.cyan : C.violet)
+      } else {
+        sg.visible = false
+        tags.shot.on = 0
+        tags.result.on = 0
+      }
     }
+    if (refs[N].current) refs[N].current.visible = false
   })
 
   const tex = getGlowTexture()
@@ -205,6 +227,23 @@ function AI({ progress, beats, shot }: { progress: { current: number }; beats: n
           </sprite>
         </group>
       ))}
+      {/* Paquete del quiz */}
+      <group ref={shotGroup} visible={false}>
+        <group scale={1.6}>
+          <mesh scale={0.08}>
+            <sphereGeometry args={[1, 12, 8]} />
+            <meshBasicMaterial color={C.white} toneMapped={false} />
+          </mesh>
+          <sprite scale={0.8}>
+            <spriteMaterial map={tex} color={C.cyan} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
+          </sprite>
+        </group>
+        <FloatTag ctl={tags.shot} text={shot?.label ?? ' '} position={[0, 0.62, 0.3]} size={0.24} />
+      </group>
+      <FloatTag ctl={tags.result} at={resultAt} text={shot?.side === 'ai' ? 'IA' : 'REGLA'} icon="arrow" size={0.3} />
+      <FloatTag ctl={tags.pathL} text={see.iaPaths[0]} icon="dot" position={[-2.3, 1.42, 0.4]} />
+      <FloatTag ctl={tags.pathR} text={see.iaPaths[1]} icon="dot" position={[3.3, 2.55, 0.4]} />
+
       <Particles count={80} opacity={0.3} color="#b8a8ff" />
     </group>
   )

@@ -1,5 +1,6 @@
 import { lazy, useEffect, useRef, useState } from 'react'
-import { tools, toolsStatement, type ToolId } from '../data/courseContent'
+import { see, tools, toolsStatement, type ToolId } from '../data/courseContent'
+import { SceneCaption } from '../components/SceneCaption'
 import { ScreenSection, SectionHead } from '../components/Section'
 import { FallbackFlow, SceneSlot } from '../components/SceneSlot'
 import { RevealText } from '../components/RevealText'
@@ -102,6 +103,7 @@ export function HerramientasSection() {
             </div>
           </div>
           <div className="pass" />
+          {!isStatement && <SceneCaption text={tool ? see.tools.focus : focus === 'table' ? see.tools.table : see.tools.overview} />}
           <div className="tools__steps" role="tablist" aria-label="Recorrido de herramientas">
             {STEPS.map((s, i) => (
               <button key={s.id} role="tab" aria-selected={s.id === focus} className={`chip ${s.id === focus ? 'is-on' : i < idx ? 'is-past' : ''}`} onClick={() => setFocus(s.id)}>

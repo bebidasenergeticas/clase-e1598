@@ -1,5 +1,6 @@
 import { lazy } from 'react'
-import { rules } from '../data/courseContent'
+import { rules, see } from '../data/courseContent'
+import { SceneCaption } from '../components/SceneCaption'
 import { BeatDots, SectionHead, StorySection } from '../components/Section'
 import { FallbackFlow, SceneSlot } from '../components/SceneSlot'
 import { RevealText } from '../components/RevealText'
@@ -22,6 +23,7 @@ export function ReglasSection() {
               <span className="mono muted rules__count">
                 {Math.min(beat + 1, 5)} / 5 · {beat >= 5 ? 'SISTEMA COMPLETO' : 'ENSAMBLANDO'}
               </span>
+              <SceneCaption text={beat >= 5 ? see.rules.done : see.rules.building} />
             </div>
             <ol className="rules__list">
               {rules.map((r, i) => {

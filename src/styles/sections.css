@@ -1807,3 +1807,254 @@
     width: min(70%, 520px);
   }
 }
+
+/* ==========================================================================
+   Capas de lectura: "Qué estás viendo" + leyenda + progreso de pasos
+   ========================================================================== */
+.scene-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: clamp(240px, 26vw, 460px);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(6, 10, 21, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.scene-caption__k {
+  font-size: 0.58rem;
+  color: var(--gold-soft);
+  letter-spacing: 0.2em;
+}
+.scene-caption__t {
+  font-size: clamp(0.8rem, 0.92vw, 1rem);
+  line-height: 1.35;
+  color: var(--text);
+  animation: caption-in 0.6s var(--ease-out);
+}
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+.scene-legend {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.scene-legend__i {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.scene-legend__i::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c, var(--cyan));
+  box-shadow: 0 0 8px var(--c, var(--cyan));
+}
+.scene-legend__i.is-data {
+  --c: var(--cyan);
+}
+.scene-legend__i.is-problem {
+  --c: var(--red);
+}
+.scene-legend__i.is-human {
+  --c: var(--gold);
+}
+.scene-legend__i.is-log,
+.scene-legend__i.is-ai {
+  --c: var(--violet);
+}
+.scene-legend__i.is-ok {
+  --c: var(--green);
+}
+.scene-legend__i.is-rule {
+  --c: var(--cyan);
+}
+.scene-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.scene-tally span {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+.scene-tally .is-ok {
+  border-color: rgba(69, 224, 160, 0.45);
+  color: #a7f3d0;
+}
+.scene-tally .is-lost {
+  border-color: rgba(255, 93, 93, 0.5);
+  color: #ffb3b3;
+}
+.scene-tally .is-routed {
+  border-color: rgba(245, 165, 36, 0.5);
+  color: var(--gold-soft);
+}
+
+/* ubicación: esquina superior izquierda del área 3D en secciones con columna oficial */
+.story-grid > .scene-caption {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  align-self: start;
+}
+.story-grid > .pass ~ .scene-caption,
+.tools__grid > .scene-caption {
+  margin-top: 54px;
+  justify-self: center;
+  max-width: clamp(260px, 34vw, 560px);
+}
+
+/* chip de problema que parpadea cuando su paquete llega al proceso */
+.problem-chips li.is-flash {
+  color: #fff !important;
+  border-color: var(--red) !important;
+  background: rgba(255, 93, 93, 0.22);
+  box-shadow: 0 0 22px -4px rgba(255, 93, 93, 0.8);
+  transition-duration: 0.12s;
+}
+.problem-chips.is-routed li.is-flash,
+.problem-chips.is-ok li.is-flash {
+  border-color: var(--gold) !important;
+  background: rgba(245, 165, 36, 0.2);
+  box-shadow: 0 0 22px -4px rgba(245, 165, 36, 0.8);
+}
+
+/* progreso de pasos en Break the workflow */
+.rw-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.rw-steps li {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+.rw-steps li + li::before {
+  content: '';
+  width: 14px;
+  height: 1px;
+  background: var(--line-2);
+}
+.rw-steps li span {
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  transition: all 0.25s;
+}
+.rw-steps li.is-done span {
+  color: var(--text-2);
+  border-color: rgba(111, 211, 255, 0.3);
+}
+.rw-steps li.is-now span {
+  color: #06101c;
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+.rw-steps li.is-fail span {
+  color: #1a0505;
+  background: var(--red);
+  border-color: var(--red);
+}
+.rw-steps li.is-off span {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.rw-steps li.is-guard span {
+  color: #140c00;
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.rw .scene-caption {
+  max-width: min(560px, 46vw);
+  margin-top: 8px;
+}
+.rw__head {
+  pointer-events: none;
+}
+.rw__head > * {
+  pointer-events: auto;
+}
+
+/* IA: narración bajo el título */
+.ia__head .scene-caption {
+  max-width: min(620px, 60vw);
+  align-items: center;
+  text-align: center;
+}
+.ia__head .scene-legend {
+  justify-content: center;
+}
+
+/* Launchpad: narración bajo el estado */
+.launch__caption {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--gutter) + 90px);
+  translate: -50% 0;
+  z-index: 3;
+  text-align: center;
+  align-items: center;
+  max-width: min(520px, 50vw);
+}
+
+/* Reglas: narración en la cabecera */
+.rules__head .scene-caption {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  max-width: none;
+  padding: 6px 12px;
+}
+
+@media (max-width: 1100px) {
+  .story-grid > .scene-caption {
+    display: none;
+  }
+}
+.rw-steps {
+  margin: 2px 0 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.rw .scene-caption {
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+/* Cierre: en los verbos el velo se aclara para ver cómo se enciende la red */
+.closing__veil {
+  transition: opacity 0.8s var(--ease-out);
+}
+.closing__veil[data-beat='1'] {
+  opacity: 0.45;
+}
